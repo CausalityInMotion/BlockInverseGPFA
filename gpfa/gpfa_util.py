@@ -9,32 +9,27 @@ GPFA util functions.
 from __future__ import division, print_function, unicode_literals
 
 import warnings
-
 import numpy as np
-import quantities as pq
 import scipy as sp
-from .conversion import BinnedSpikeTrain
 
 
 def get_seqs(data, bin_size, use_sqrt=True):
+
     """
-    Converts the data into a rec array using internally BinnedSpikeTrain.
+    Converts binary spike trains into a rec array of spike cpunts.
 
     Parameters
     ----------
-    data : list of list of neo.SpikeTrain
-        The outer list corresponds to trials and the inner list corresponds to
-        the neurons recorded in that trial, such that data[l][n] is the
-        spike train of neuron n in trial l. Note that the number and order of
-        neo.SpikeTrains objects per trial must be fixed such that data[l][n]
-        and data[k][n] refer to the same spike generator for any choice of l,k
-        and n.
-    bin_size: quantity.Quantity
-        Spike bin width
+    data : numpy.ndarray
+        The outer array corresponds to trials and the inner array
+        corresponds to the neurons recorded in that trial, such
+        that data[l][n] is the spike train of neuron n in trial l.
+    bin_size: int
+        Spike bin width in ms
 
     use_sqrt: bool
         Boolean specifying whether or not to use square-root transform on
-        spike counts (see original paper for motivation).
+        spike counts.
         Default: True
 
     Returns
@@ -49,29 +44,50 @@ def get_seqs(data, bin_size, use_sqrt=True):
 
     Raises
     ------
-    ValueError
-        if `bin_size` is not a pq.Quantity.
+    TypeError
+        if `data` type is not np.ndarray.
     """
-    if not isinstance(bin_size, pq.Quantity):
-        raise ValueError("'bin_size' must be of type pq.Quantity")
+
+    if not isinstance(data, np.ndarray):
+        raise TypeError("'data' must be of type np.ndarray")
 
     seqs = []
-    for dat in data:
-        sts = dat
-        binned_spiketrain = BinnedSpikeTrain(sts, bin_size=bin_size)
+    n_trials = len(data)
+
+    # loop over all trials
+    for t in range(n_trials):
+
+        # number of neurons
+        ydim = data[t].shape[0]
+        # number of bins per trial
+        n_bin = int(np.floor(data[0].shape[1]/bin_size))
+        binned_spikecount = np.zeros([ydim, n_bin])
+
+        # loop over the number of bins to compute the
+        # spike count per bin
+        for b in range(n_bin):
+
+            # bin egdes
+            t_start = bin_size * b
+            t_stop = bin_size * (b + 1)
+            binned_spikecount[:, b] = np.sum(
+                                    data[t][:, t_start:t_stop],
+                                    axis=1
+                                    )
+        # take square root of the binned_spikeCount
+        # if `use_sqrt` is True (see paper for motivation)
         if use_sqrt:
-            binned = np.sqrt(binned_spiketrain.to_array())
-        else:
-            binned = binned_spiketrain.to_array()
-        seqs.append(
-            (binned_spiketrain.n_bins, binned))
+            binned_spikecount = np.sqrt(binned_spikecount)
+
+        seqs.append((n_bin, binned_spikecount))
+
+    # add fields to the np.array to make it a np.recarry
     seqs = np.array(seqs, dtype=[('T', int), ('y', 'O')])
 
     # Remove trials that are shorter than one bin width
     if len(seqs) > 0:
         trials_to_keep = seqs['T'] > 0
         seqs = seqs[trials_to_keep]
-
     return seqs
 
 
