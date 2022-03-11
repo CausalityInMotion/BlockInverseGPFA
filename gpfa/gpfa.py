@@ -70,11 +70,10 @@ https://users.ece.cmu.edu/~byronyu/software.shtml
 
 from __future__ import division, print_function, unicode_literals
 
-import neo
-import numpy as np
-import quantities as pq
-import sklearn
+# import neo
 import warnings
+import numpy as np
+import sklearn
 from . import gpfa_core
 from . import gpfa_util
 # from elephant.utils import deprecated_alias
@@ -237,8 +236,8 @@ class GPFA(sklearn.base.BaseEstimator):
     """
 
     # @deprecated_alias(binsize='bin_size')
-    def __init__(self, bin_size=20 * pq.ms, x_dim=3, min_var_frac=0.01,
-                 tau_init=100.0 * pq.ms, eps_init=1.0E-3, em_tol=1.0E-8,
+    def __init__(self, bin_size=20, x_dim=3, min_var_frac=0.01,
+                 tau_init=100.0, eps_init=1.0E-3, em_tol=1.0E-8,
                  em_max_iters=500, freq_ll=5, verbose=False):
         self.bin_size = bin_size
         self.x_dim = x_dim
@@ -256,10 +255,10 @@ class GPFA(sklearn.base.BaseEstimator):
             'y')
         self.verbose = verbose
 
-        if not isinstance(self.bin_size, pq.Quantity):
-            raise ValueError("'bin_size' must be of type pq.Quantity")
-        if not isinstance(self.tau_init, pq.Quantity):
-            raise ValueError("'tau_init' must be of type pq.Quantity")
+        # if not isinstance(self.bin_size, pq.Quantity):
+        #     raise ValueError("'bin_size' must be of type pq.Quantity")
+        # if not isinstance(self.tau_init, pq.Quantity):
+        #     raise ValueError("'tau_init' must be of type pq.Quantity")
 
         # will be updated later
         self.params_estimated = dict()
@@ -301,7 +300,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
             If covariance matrix of input spike data is rank deficient.
         """
-        self._check_training_data(spiketrains)
+        # self._check_training_data(spiketrains)
         seqs_train = self._format_training_data(spiketrains)
         # Check if training data covariance is full rank
         y_all = np.hstack(seqs_train['y'])
@@ -323,25 +322,25 @@ class GPFA(sklearn.base.BaseEstimator):
         self.params_estimated, self.fit_info = gpfa_core.fit(
             seqs_train=seqs_train,
             x_dim=self.x_dim,
-            bin_width=self.bin_size.rescale('ms').magnitude,
+            bin_width=self.bin_size,
             min_var_frac=self.min_var_frac,
             em_max_iters=self.em_max_iters,
             em_tol=self.em_tol,
-            tau_init=self.tau_init.rescale('ms').magnitude,
+            tau_init=self.tau_init,
             eps_init=self.eps_init,
             freq_ll=self.freq_ll,
             verbose=self.verbose)
 
         return self
 
-    @staticmethod
-    def _check_training_data(spiketrains):
-        if len(spiketrains) == 0:
-            raise ValueError("Input spiketrains cannot be empty")
-        if not isinstance(spiketrains[0][0], neo.SpikeTrain):
-            raise ValueError("structure of the spiketrains is not correct: "
-                             "0-axis should be trials, 1-axis neo.SpikeTrain"
-                             "and 2-axis spike times")
+    # @staticmethod
+    # def _check_training_data(spiketrains):
+    #     if len(spiketrains) == 0:
+    #         raise ValueError("Input spiketrains cannot be empty")
+    #     if not isinstance(spiketrains[0][0], neo.SpikeTrain):
+    #         raise ValueError("structure of the spiketrains is not correct: "
+    #                          "0-axis should be trials, 1-axis neo.SpikeTrain"
+    #                          "and 2-axis spike times")
 
     def _format_training_data(self, spiketrains):
         seqs = gpfa_util.get_seqs(spiketrains, self.bin_size)
