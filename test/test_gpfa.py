@@ -1,13 +1,9 @@
 """Test gpfa.py."""
 
 import unittest
-import neo
 import numpy as np
 from scipy import linalg
-import quantities as pq
 from sklearn.decomposition import FactorAnalysis
-
-import gpfa
 from gpfa import GPFA, gpfa_core, gpfa_util
 
 
@@ -20,52 +16,30 @@ class TestGPFA(unittest.TestCase):
         Set up synthetic data, initial parameters to help with the
         functions to be tested
         """
-        def gen_gamma_spike_train(k, theta, t_max):
-            x_gam = []
-            for _ in range(int(3 * t_max / (k * theta))):
-                x_gam.append(np.random.gamma(k, theta))
-            s_gam = np.cumsum(x_gam)
-            return s_gam[s_gam < t_max]
-
-        def gen_test_data(rates, dur, shapes=(1, 1, 1, 1)):
-            s_gam = gen_gamma_spike_train(shapes[0], 1. / rates[0], dur[0])
-            for i in range(1, 4):
-                s_i = gen_gamma_spike_train(shapes[i], 1. / rates[i], dur[i])
-                s_gam = np.concatenate([s_gam, s_i + np.sum(dur[:i])])
-            return s_gam
-
-        # generate data
-        self.rates_a = (2, 10, 2, 2)
-        self.rates_b = (2, 2, 10, 2)
-        self.durs = (2.5, 2.5, 2.5, 2.5)
         np.random.seed(0)
         self.n_trials = 1
-        self.data = []
-        for _ in range(self.n_trials):
-            n_1 = neo.SpikeTrain(gen_test_data(
-                self.rates_a, self.durs), units=1 * pq.s,
-                t_start=0 * pq.s, t_stop=10 * pq.s
-                )
-            n_2 = neo.SpikeTrain(gen_test_data(
-                self.rates_a, self.durs), units=1 * pq.s,
-                t_start=0 * pq.s, t_stop=10 * pq.s
-                )
-            n_3 = neo.SpikeTrain(gen_test_data(
-                self.rates_b, self.durs), units=1 * pq.s,
-                t_start=0 * pq.s, t_stop=10 * pq.s
-                )
-            n_4 = neo.SpikeTrain(gen_test_data(
-                self.rates_b, self.durs), units=1 * pq.s,
-                t_start=0 * pq.s, t_stop=10 * pq.s
-                )
-            self.data.append([n_1, n_2, n_3, n_4])
-
-        self.bin_width = 20.0
+        self.bin_size = 20
         self.tau_init = 100.0
         self.eps_init = 1.0E-3
-        self.bin_size = 20 * pq.ms
         self.n_iters = 10
         self.x_dim = 2
+        n_neuron = 5
+
+        def gen_test_data(n_neuron):
+            delta_t = 1e-3  # ms
+            t_max = 0.5     # sec
+            rate = 100      # number of spikes/sec
+            n_trials = 1    # number of trials
+            spikes = np.zeros((n_trials, n_neuron, int(t_max/delta_t)))
+            spikes[
+                np.random.rand(
+                    n_trials,
+                    n_neuron,
+                    int(t_max/delta_t)
+                    ) < rate * delta_t] = 1
+            return spikes
+
+        self.data = gen_test_data(n_neuron)
 
         # covert generated data to sequence spiketrains
         self.seqs_train = gpfa_util.get_seqs(
@@ -80,7 +54,7 @@ class TestGPFA(unittest.TestCase):
         self.params_init['covType'] = 'rbf'
         # GP timescale
         # Assume binWidth is the time step size.
-        time_step = (self.bin_width / self.tau_init) ** 2
+        time_step = (self.bin_size / self.tau_init) ** 2
         self.params_init['gamma'] = time_step * np.ones(self.x_dim)
         # GP noise variance
         self.params_init['eps'] = self.eps_init * np.ones(self.x_dim)
@@ -149,7 +123,7 @@ class TestGPFA(unittest.TestCase):
         # C'R_invC
         c_rinv_c = c_rinv.dot(self.params_init['C'])
 
-        # (y - d)
+        # subtract mean from activities (y - d)
         dif = np.hstack(self.seqs_train['y']) - \
             self.params_init['d'][:, np.newaxis]
         # C'R_inv * (y - d)
@@ -194,9 +168,9 @@ class TestGPFA(unittest.TestCase):
         Test if fill_persymm returns an expected filled matrix
         """
         _, k_big_inv, _ = gpfa_util.make_k_big(
-                                                    self.params_init,
-                                                    self.t_all
-                                                    )
+                                                self.params_init,
+                                                self.t_all
+                                                )
         full_k_big_inv = gpfa_util.fill_persymm(
                                 k_big_inv[:(self.x_dim*self.t_half), :],
                                 self.x_dim, self.t_all)
@@ -208,7 +182,7 @@ class TestGPFA(unittest.TestCase):
         Test GPFA orthonormalize function.
         """
         # get sequence spiketrains to be orthonormalized
-        seqs_latent, _ = gpfa.gpfa_core.exact_inference_with_ll(
+        seqs_latent, _ = gpfa_core.exact_inference_with_ll(
             self.seqs_train, self.params_init
             )
         corth, _ = gpfa_core.orthonormalize(self.params_init, seqs_latent)
