@@ -23,34 +23,130 @@ class TestGPFA(unittest.TestCase):
         self.eps_init = 1.0E-3
         self.n_iters = 10
         self.x_dim = 2
-        n_neuron = 5
+        n_neurons = 4
 
-        def gen_test_data(n_neuron):
-            delta_t = 1e-3  # ms
-            t_max = 0.5     # sec
-            rate = 100      # number of spikes/sec
-            n_trials = 1    # number of trials
-            spikes = np.zeros((n_trials, n_neuron, int(t_max/delta_t)))
-            spikes[
-                np.random.rand(
-                    n_trials,
-                    n_neuron,
-                    int(t_max/delta_t)
-                    ) < rate * delta_t] = 1
-            return spikes
+        def poisson_generator(rate, dur, n_neurons, myseed=2020):
+            """
+            Generates poisson trains
 
-        self.data = gen_test_data(n_neuron)
+            Args:
+                durs       : trial duration in sec
+                rate       : noise amplitute [Hz]
+                n_neurons  : number of neurons
+                myseed     : random seed. int or boolean
+
+            Returns:
+                pre_spike_train : spike train matrix, ith row represents
+                                whether there is a spike in ith bin over
+                                time (1 if spike, 0 otherwise)
+            """
+
+            # Retrieve simulation parameters
+            dt = 0.001  # delta t in [s]
+            Lt = int(dur / dt)  # number of time bins
+
+            # set random seed
+            if myseed:
+                np.random.seed(seed=myseed)
+            else:
+                np.random.seed()
+
+            # generate uniformly distributed random variables
+            u_rand = np.random.rand(n_neurons, Lt)
+
+            # generate Poisson train
+            # Check if broadcasting could work:
+            # u_rand is (n, Lt) and rate is (n,)
+            poisson_train = 1. * (u_rand < rate * dt)
+
+            return poisson_train
+
+        def gen_test_data(rates_a, rates_b,
+                          durs, n_neurons,
+                          bin_size, use_sqrt=True):
+            """
+            Generate test data
+            There are four neurons--the first two use rates from
+            set a and the last two use rate from rates set b.
+
+            Args:
+                rates_a     : list of rates, one for each different time epoch
+                rates_b     : list of rates, one for each different time epoch
+                            shuffled differently from rates_a
+                durs        : duration of the trial in [s], equal to 10 [s]
+                            broken divided into four epochs of length 2.5
+                n_neurons   : number of neurons
+                bin_size    : bin size for analysis purpose
+                use_sqrt    : boolean
+                            if true, take square root of binned spike trains
+
+            """
+            # initialization of sequence trains as a list
+            seqs = []
+
+            # generate two spike trains each with two neurons
+            # neurons one and two use rates_a
+            # neuros three and four use rates_b
+            # concatenate them into one spiketrain
+            spk_rates_a = poisson_generator(rates_a[0], durs[0], n_neurons)
+            spk_rates_b = poisson_generator(rates_b[0], durs[0], n_neurons)
+            spk = np.concatenate([spk_rates_a, spk_rates_b])
+
+            l_rates_a = len(rates_a)
+
+            # loop over the remaining rates
+            for i in range(1, l_rates_a):
+
+                spk_rates_a = poisson_generator(rates_a[i], durs[i], n_neurons)
+                spk_rates_b = poisson_generator(rates_b[i], durs[i], n_neurons)
+                spk_i = np.concatenate([spk_rates_a, spk_rates_b])
+                # concatenate previous spiketrains with new spiketrains
+                # from current duration
+                spk = np.concatenate([spk, spk_i], axis=1)
+
+            l_spk = spk.shape[1]
+
+            # get number of bins
+            n_bins = l_spk // bin_size
+
+            # initialize binned spiked counts of dimenisions
+            # number of neurons by number of bins
+            binned_spikecount = np.zeros([n_neurons * 2, n_bins])
+
+            # loop over each bin and compute the total number of
+            # spikes in each bin as spike count
+            for b in range(n_bins):
+                # bin egdes
+                t_start = int(bin_size * b)
+                t_stop = int(bin_size * (b + 1))
+                binned_spikecount[:, b] = np.sum(spk[:, t_start:t_stop],
+                                                 axis=1
+                                                 )
+
+            # take square root of the binned_spikeCount
+            # if `use_sqrt` is True (see paper for motivation)
+            if use_sqrt:
+                binned_sqrt_spkcount = np.sqrt(binned_spikecount)
+            seqs.append((n_bins, binned_sqrt_spkcount))
+
+            # add fields to the np.array to make it a np.recarray
+            seqs = np.array(seqs, dtype=[('T', int), ('y', 'O')])
+            return seqs
+
+        rates_a = (2, 10, 2, 2)
+        rates_b = (2, 2, 10, 2)
+        durs = (2.5, 2.5, 2.5, 2.5)
 
         # covert generated data to sequence spiketrains
-        self.seqs_train = gpfa_util.get_seqs(
-                                self.data, self.bin_size, use_sqrt=False
-                                )
+        self.data = gen_test_data(rates_a, rates_b, durs,
+                                  n_neurons, bin_size=self.bin_size
+                                  )
         # get the number of time steps in the trails
-        self.t_all = self.seqs_train['T'][0]
+        self.t_all = self.data['T'][0]
         self.t_half = int(np.ceil(self.t_all / 2.0))
 
         # Initialize state model parameters
-        self.params_init = dict()
+        self.params_init = {}
         self.params_init['covType'] = 'rbf'
         # GP timescale
         # Assume binWidth is the time step size.
@@ -60,7 +156,7 @@ class TestGPFA(unittest.TestCase):
         self.params_init['eps'] = self.eps_init * np.ones(self.x_dim)
 
         # Initialize observation model parameters using factor analysis
-        y_all = np.hstack(self.seqs_train['y'])
+        y_all = np.hstack(self.data['y'])
         f_a = FactorAnalysis(
             n_components=self.x_dim, copy=True,
             noise_variance_init=np.diag(np.cov(y_all, bias=True))
@@ -124,7 +220,7 @@ class TestGPFA(unittest.TestCase):
         c_rinv_c = c_rinv.dot(self.params_init['C'])
 
         # subtract mean from activities (y - d)
-        dif = np.hstack(self.seqs_train['y']) - \
+        dif = np.hstack(self.data['y']) - \
             self.params_init['d'][:, np.newaxis]
         # C'R_inv * (y - d)
         term1_mat = c_rinv.dot(dif).reshape(
@@ -151,7 +247,7 @@ class TestGPFA(unittest.TestCase):
 
         # get mean and covariance as implemented by GPFA
         seqs_latent, _ = gpfa_core.exact_inference_with_ll(
-            self.seqs_train, self.params_init
+            self.data, self.params_init
             )
         # Assert
         self.assertTrue(np.allclose(
@@ -183,7 +279,7 @@ class TestGPFA(unittest.TestCase):
         """
         # get sequence spiketrains to be orthonormalized
         seqs_latent, _ = gpfa_core.exact_inference_with_ll(
-            self.seqs_train, self.params_init
+            self.data, self.params_init
             )
         corth, _ = gpfa_core.orthonormalize(self.params_init, seqs_latent)
         c_orth = linalg.orth(self.params_init['C'])

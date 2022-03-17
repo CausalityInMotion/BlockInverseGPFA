@@ -343,7 +343,7 @@ class GPFA(sklearn.base.BaseEstimator):
     #                          "and 2-axis spike times")
 
     def _format_training_data(self, spiketrains):
-        seqs = gpfa_util.get_seqs(spiketrains, self.bin_size)
+        seqs = spiketrains
         # Remove inactive units based on training set
         self.has_spikes_bool = np.hstack(seqs['y']).any(axis=1)
         for seq in seqs:
@@ -416,21 +416,16 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Raises
         ------
-        ValueError
-            If the number of neurons in `spiketrains` is different from that
-            in the training spiketrain data.
-
             If `returned_data` contains keys different from the ones in
             `self.valid_data_names`.
         """
-        if len(spiketrains[0]) != len(self.has_spikes_bool):
-            raise ValueError("'spiketrains' must contain the same number of "
-                             "neurons as the training spiketrain data")
+
         invalid_keys = set(returned_data).difference(self.valid_data_names)
         if len(invalid_keys) > 0:
             raise ValueError("'returned_data' can only have the following "
                              "entries: {}".format(self.valid_data_names))
-        seqs = gpfa_util.get_seqs(spiketrains, self.bin_size)
+
+        seqs = spiketrains
         for seq in seqs:
             seq['y'] = seq['y'][self.has_spikes_bool, :]
         seqs, ll = gpfa_core.exact_inference_with_ll(seqs,
