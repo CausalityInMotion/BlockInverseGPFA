@@ -1,4 +1,9 @@
-"""Test gpfa.py."""
+"""
+GPFA Unittests.
+
+:copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
+:license: Modified BSD, see LICENSE.txt for details.
+"""
 
 import unittest
 import numpy as np
@@ -23,46 +28,9 @@ class TestGPFA(unittest.TestCase):
         self.eps_init = 1.0E-3
         self.n_iters = 10
         self.x_dim = 2
-        n_neurons = 4
+        n_neurons = 2  # per rate therefore, there are 4 neurons
 
-        def poisson_generator(rate, dur, n_neurons, myseed=2020):
-            """
-            Generates poisson trains
-
-            Args:
-                durs       : trial duration in sec
-                rate       : noise amplitute [Hz]
-                n_neurons  : number of neurons
-                myseed     : random seed. int or boolean
-
-            Returns:
-                pre_spike_train : spike train matrix, ith row represents
-                                whether there is a spike in ith bin over
-                                time (1 if spike, 0 otherwise)
-            """
-
-            # Retrieve simulation parameters
-            dt = 0.001  # delta t in [s]
-            Lt = int(dur / dt)  # number of time bins
-
-            # set random seed
-            if myseed:
-                np.random.seed(seed=myseed)
-            else:
-                np.random.seed()
-
-            # generate uniformly distributed random variables
-            u_rand = np.random.rand(n_neurons, Lt)
-
-            # generate Poisson train
-            # Check if broadcasting could work:
-            # u_rand is (n, Lt) and rate is (n,)
-            poisson_train = 1. * (u_rand < rate * dt)
-
-            return poisson_train
-
-        def gen_test_data(rates_a, rates_b,
-                          durs, n_neurons,
+        def gen_test_data(rates_a, rates_b, durs, n_neurons,
                           bin_size, use_sqrt=True):
             """
             Generate test data
@@ -73,64 +41,58 @@ class TestGPFA(unittest.TestCase):
                 rates_a     : list of rates, one for each different time epoch
                 rates_b     : list of rates, one for each different time epoch
                             shuffled differently from rates_a
-                durs        : duration of the trial in [s], equal to 10 [s]
-                            broken divided into four epochs of length 2.5
+                durs        : duration of the trial in [s]
                 n_neurons   : number of neurons
                 bin_size    : bin size for analysis purpose
                 use_sqrt    : boolean
                             if true, take square root of binned spike trains
+                myseed      : random seed. int or boolean
+
+            Returns:
+                seqs        : a list of binned spiketrains arrays per trial
 
             """
-            # initialization of sequence trains as a list
-            seqs = []
+            # get number of bins per durs
+            # first covernt durs to [ms]
+            n_bins_per_dur = int(durs[0] * 1000 / bin_size)
 
             # generate two spike trains each with two neurons
             # neurons one and two use rates_a
             # neuros three and four use rates_b
             # concatenate them into one spiketrain
-            spk_rates_a = poisson_generator(rates_a[0], durs[0], n_neurons)
-            spk_rates_b = poisson_generator(rates_b[0], durs[0], n_neurons)
-            spk = np.concatenate([spk_rates_a, spk_rates_b])
+            spk_rates_a = np.random.poisson(rates_a[0],
+                                            (n_neurons, n_bins_per_dur))
+            spk_rates_b = np.random.poisson(rates_b[0],
+                                            (n_neurons, n_bins_per_dur))
+            binned_spikecount = np.concatenate([spk_rates_a, spk_rates_b])
 
             l_rates_a = len(rates_a)
 
             # loop over the remaining rates
             for i in range(1, l_rates_a):
 
-                spk_rates_a = poisson_generator(rates_a[i], durs[i], n_neurons)
-                spk_rates_b = poisson_generator(rates_b[i], durs[i], n_neurons)
+                spk_rates_a = np.random.poisson(rates_a[i],
+                                                (n_neurons, n_bins_per_dur))
+                spk_rates_b = np.random.poisson(rates_b[i],
+                                                (n_neurons, n_bins_per_dur))
                 spk_i = np.concatenate([spk_rates_a, spk_rates_b])
                 # concatenate previous spiketrains with new spiketrains
                 # from current duration
-                spk = np.concatenate([spk, spk_i], axis=1)
-
-            l_spk = spk.shape[1]
+                binned_spikecount = np.concatenate(
+                                                [binned_spikecount,
+                                                 spk_i], axis=1
+                                                )
 
             # get number of bins
-            n_bins = l_spk // bin_size
-
-            # initialize binned spiked counts of dimenisions
-            # number of neurons by number of bins
-            binned_spikecount = np.zeros([n_neurons * 2, n_bins])
-
-            # loop over each bin and compute the total number of
-            # spikes in each bin as spike count
-            for b in range(n_bins):
-                # bin egdes
-                t_start = int(bin_size * b)
-                t_stop = int(bin_size * (b + 1))
-                binned_spikecount[:, b] = np.sum(spk[:, t_start:t_stop],
-                                                 axis=1
-                                                 )
+            n_bins = binned_spikecount.shape[1]
 
             # take square root of the binned_spikeCount
             # if `use_sqrt` is True (see paper for motivation)
             if use_sqrt:
                 binned_sqrt_spkcount = np.sqrt(binned_spikecount)
-            seqs.append((n_bins, binned_sqrt_spkcount))
 
-            # add fields to the np.array to make it a np.recarray
-            seqs = np.array(seqs, dtype=[('T', int), ('y', 'O')])
+            seqs = [(n_bins, binned_sqrt_spkcount)]
+
             return seqs
 
         rates_a = (2, 10, 2, 2)
@@ -138,9 +100,12 @@ class TestGPFA(unittest.TestCase):
         durs = (2.5, 2.5, 2.5, 2.5)
 
         # covert generated data to sequence spiketrains
-        self.data = gen_test_data(rates_a, rates_b, durs,
-                                  n_neurons, bin_size=self.bin_size
-                                  )
+        seqs = gen_test_data(rates_a, rates_b, durs,
+                             n_neurons, bin_size=self.bin_size)
+
+        # add fields to the np.array to make it a np.recarray
+        self.data = np.array(seqs, dtype=[('T', int), ('y', 'O')])
+
         # get the number of time steps in the trails
         self.t_all = self.data['T'][0]
         self.t_half = int(np.ceil(self.t_all / 2.0))

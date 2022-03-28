@@ -12,10 +12,10 @@ To run the unittests in the `test` folder, use the following command in your com
 $ python -m unittest test.test_gpfa
 ```
 
-### License
+## License
 Modified BSD License based on Elephant, see [LICENSE.txt](LICENSE.txt) for details.
 
 
-### Copyright
+## Copyright
 
-:copyright: 2021 Brooks Musangu and Jan Drugowitsch
+:copyright: 2021 Brooks M. Musangu and Jan Drugowitsch

@@ -75,8 +75,6 @@ import warnings
 import numpy as np
 import sklearn
 from . import gpfa_core
-from . import gpfa_util
-# from elephant.utils import deprecated_alias
 
 
 __all__ = [
@@ -333,15 +331,6 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return self
 
-    # @staticmethod
-    # def _check_training_data(spiketrains):
-    #     if len(spiketrains) == 0:
-    #         raise ValueError("Input spiketrains cannot be empty")
-    #     if not isinstance(spiketrains[0][0], neo.SpikeTrain):
-    #         raise ValueError("structure of the spiketrains is not correct: "
-    #                          "0-axis should be trials, 1-axis neo.SpikeTrain"
-    #                          "and 2-axis spike times")
-
     def _format_training_data(self, spiketrains):
         seqs = spiketrains
         # Remove inactive units based on training set
@@ -413,17 +402,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
             Note that the num. of bins (#bins) can vary across trials,
             reflecting the trial durations in the given `spiketrains` data.
-
-        Raises
-        ------
-            If `returned_data` contains keys different from the ones in
-            `self.valid_data_names`.
         """
-
-        invalid_keys = set(returned_data).difference(self.valid_data_names)
-        if len(invalid_keys) > 0:
-            raise ValueError("'returned_data' can only have the following "
-                             "entries: {}".format(self.valid_data_names))
 
         seqs = spiketrains
         for seq in seqs:

@@ -1,5 +1,5 @@
 Code based on Elephant - Electrophysiology Analysis Toolkit: Copyright (c) 2014-2019, Elephant authors and contributors
-Modifications and additions: Copyright (c) 2021 Brooks Musangu and Jan Drugowitsch
+Modifications and additions: Copyright (c) 2021 Brooks M. Musangu and Jan Drugowitsch
 All rights reserved.
 
 
