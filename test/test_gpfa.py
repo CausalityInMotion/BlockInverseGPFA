@@ -69,7 +69,7 @@ class TestGPFA(unittest.TestCase):
 
             # loop over the remaining rates
             for i in range(1, l_rates_a):
-                # get number of bins for the first epoch
+                # get number of bins for the remaining epochs
                 n_bins_per_dur = int(durs[i] / bin_size)
                 spk_rates_a = np.random.poisson(rates_a[i],
                                                 (n_neurons, n_bins_per_dur))
