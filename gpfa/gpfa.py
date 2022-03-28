@@ -234,8 +234,8 @@ class GPFA(sklearn.base.BaseEstimator):
     """
 
     # @deprecated_alias(binsize='bin_size')
-    def __init__(self, bin_size=20, x_dim=3, min_var_frac=0.01,
-                 tau_init=100.0, eps_init=1.0E-3, em_tol=1.0E-8,
+    def __init__(self, bin_size=0.02, x_dim=3, min_var_frac=0.01,
+                 tau_init=0.1, eps_init=1.0E-3, em_tol=1.0E-8,
                  em_max_iters=500, freq_ll=5, verbose=False):
         self.bin_size = bin_size
         self.x_dim = x_dim
@@ -252,11 +252,6 @@ class GPFA(sklearn.base.BaseEstimator):
             'VsmGP',
             'y')
         self.verbose = verbose
-
-        # if not isinstance(self.bin_size, pq.Quantity):
-        #     raise ValueError("'bin_size' must be of type pq.Quantity")
-        # if not isinstance(self.tau_init, pq.Quantity):
-        #     raise ValueError("'tau_init' must be of type pq.Quantity")
 
         # will be updated later
         self.params_estimated = dict()

@@ -23,8 +23,8 @@ class TestGPFA(unittest.TestCase):
         """
         np.random.seed(0)
         self.n_trials = 1
-        self.bin_size = 20
-        self.tau_init = 100.0
+        self.bin_size = 0.02  # [s]
+        self.tau_init = 0.1  # [s]
         self.eps_init = 1.0E-3
         self.n_iters = 10
         self.x_dim = 2
@@ -34,27 +34,26 @@ class TestGPFA(unittest.TestCase):
                           bin_size, use_sqrt=True):
             """
             Generate test data
-            There are four neurons--the first two use rates from
-            set a and the last two use rate from rates set b.
-
+            There are 2 x n_neuron neurons -- the first n_neuron
+            neurons use rates from set a, and the second n_neuron
+            neurons use rates from set b.
             Args:
                 rates_a     : list of rates, one for each different time epoch
                 rates_b     : list of rates, one for each different time epoch
                             shuffled differently from rates_a
-                durs        : duration of the trial in [s]
+                durs        : list of durations of each time epoch in [s]
                 n_neurons   : number of neurons
-                bin_size    : bin size for analysis purpose
+                bin_size    : bin size in [s] for analysis purpose
                 use_sqrt    : boolean
                             if true, take square root of binned spike trains
-                myseed      : random seed. int or boolean
 
             Returns:
                 seqs        : a list of binned spiketrains arrays per trial
 
             """
-            # get number of bins per durs
-            # first covernt durs to [ms]
-            n_bins_per_dur = int(durs[0] * 1000 / bin_size)
+            # get number of bins for the first epoch
+            # for both rates_a and rates_b
+            n_bins_per_dur = int(durs[0] / bin_size)
 
             # generate two spike trains each with two neurons
             # neurons one and two use rates_a
@@ -70,7 +69,8 @@ class TestGPFA(unittest.TestCase):
 
             # loop over the remaining rates
             for i in range(1, l_rates_a):
-
+                # get number of bins for the first epoch
+                n_bins_per_dur = int(durs[i] / bin_size)
                 spk_rates_a = np.random.poisson(rates_a[i],
                                                 (n_neurons, n_bins_per_dur))
                 spk_rates_b = np.random.poisson(rates_b[i],

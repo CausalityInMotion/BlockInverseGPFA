@@ -20,8 +20,8 @@ from tqdm import trange
 from . import gpfa_util
 
 
-def fit(seqs_train, x_dim=3, bin_width=20.0, min_var_frac=0.01, em_tol=1.0E-8,
-        em_max_iters=500, tau_init=100.0, eps_init=1.0E-3, freq_ll=5,
+def fit(seqs_train, x_dim=3, bin_width=0.02, min_var_frac=0.01, em_tol=1.0E-8,
+        em_max_iters=500, tau_init=0.1, eps_init=1.0E-3, freq_ll=5,
         verbose=False):
     """
     Fit the GPFA model with the given training data.
