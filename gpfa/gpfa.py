@@ -70,7 +70,6 @@ https://users.ece.cmu.edu/~byronyu/software.shtml
 
 from __future__ import division, print_function, unicode_literals
 
-# import neo
 import warnings
 import numpy as np
 import sklearn
@@ -115,7 +114,7 @@ class GPFA(sklearn.base.BaseEstimator):
         Default: 3
     bin_size : float, optional
         spike bin width in msec
-        Default: 20.0
+        Default: 0.02
     min_var_frac : float, optional
         fraction of overall data variance for each observed dimension to set as
         the private variance floor.  This is used to combat Heywood cases,
@@ -195,11 +194,6 @@ class GPFA(sklearn.base.BaseEstimator):
     fit_transform
     score
 
-    Raises
-    ------
-    ValueError
-        If `bin_size` or `tau_init` is not a `pq.Quantity`.
-
     Examples
     --------
     In the following example, we calculate the neural trajectories of 20
@@ -233,7 +227,6 @@ class GPFA(sklearn.base.BaseEstimator):
     ...                               'latent_variable'])
     """
 
-    # @deprecated_alias(binsize='bin_size')
     def __init__(self, bin_size=0.02, x_dim=3, min_var_frac=0.01,
                  tau_init=0.1, eps_init=1.0E-3, em_tol=1.0E-8,
                  em_max_iters=500, freq_ll=5, verbose=False):
@@ -254,14 +247,9 @@ class GPFA(sklearn.base.BaseEstimator):
         self.verbose = verbose
 
         # will be updated later
-        self.params_estimated = dict()
-        self.fit_info = dict()
-        self.transform_info = dict()
-
-    @property
-    def binsize(self):
-        warnings.warn("'binsize' is deprecated; use 'bin_size'")
-        return self.bin_size
+        self.params_estimated = {}
+        self.fit_info = {}
+        self.transform_info = {}
 
     def fit(self, spiketrains):
         """
@@ -269,16 +257,12 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        spiketrains : list of list of neo.SpikeTrain
+        spiketrains : a list of binned spiketrains arrays per trial
             Spike train data to be fit to latent variables.
             The outer list corresponds to trials and the inner list corresponds
             to the neurons recorded in that trial, such that
             `spiketrains[l][n]` is the spike train of neuron `n` in trial `l`.
-            Note that the number and order of `neo.SpikeTrain` objects per
-            trial must be fixed such that `spiketrains[l][n]` and
-            `spiketrains[k][n]` refer to spike trains of the same neuron
-            for any choices of `l`, `k`, and `n`.
-
+            
         Returns
         -------
         self : object
@@ -287,9 +271,6 @@ class GPFA(sklearn.base.BaseEstimator):
         Raises
         ------
         ValueError
-            If `spiketrains` is an empty list.
-
-            If `spiketrains[0][0]` is not a `neo.SpikeTrain`.
 
             If covariance matrix of input spike data is rank deficient.
         """
@@ -315,7 +296,7 @@ class GPFA(sklearn.base.BaseEstimator):
         self.params_estimated, self.fit_info = gpfa_core.fit(
             seqs_train=seqs_train,
             x_dim=self.x_dim,
-            bin_width=self.bin_size,
+            bin_size=self.bin_size,
             min_var_frac=self.min_var_frac,
             em_max_iters=self.em_max_iters,
             em_tol=self.em_tol,
@@ -342,15 +323,12 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        spiketrains : list of list of neo.SpikeTrain
-            Spike train data to be transformed to latent variables.
+        spiketrains : a list of binned spiketrains arrays per trial
+            Spike train data to be fit to latent variables.
             The outer list corresponds to trials and the inner list corresponds
             to the neurons recorded in that trial, such that
             `spiketrains[l][n]` is the spike train of neuron `n` in trial `l`.
-            Note that the number and order of `neo.SpikeTrain` objects per
-            trial must be fixed such that `spiketrains[l][n]` and
-            `spiketrains[k][n]` refer to spike trains of the same neuron
-            for any choices of `l`, `k`, and `n`.
+
         returned_data : list of str
             The dimensionality reduction transform generates the following
             resultant data:
@@ -421,7 +399,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        spiketrains : list of list of neo.SpikeTrain
+        spiketrains : a list of binned spiketrains arrays per trial
             Refer to the :func:`GPFA.fit` docstring.
 
         returned_data : list of str
@@ -452,15 +430,11 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        spiketrains : list of list of neo.SpikeTrain
-            Spike train data to be scored.
+        spiketrains : a list of binned spiketrains arrays per trial
+            Spike train data to be fit to latent variables.
             The outer list corresponds to trials and the inner list corresponds
             to the neurons recorded in that trial, such that
             `spiketrains[l][n]` is the spike train of neuron `n` in trial `l`.
-            Note that the number and order of `neo.SpikeTrain` objects per
-            trial must be fixed such that `spiketrains[l][n]` and
-            `spiketrains[k][n]` refer to spike trains of the same neuron
-            for any choice of `l`, `k`, and `n`.
 
         Returns
         -------

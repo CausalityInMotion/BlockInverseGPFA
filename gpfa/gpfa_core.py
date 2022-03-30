@@ -20,7 +20,7 @@ from tqdm import trange
 from . import gpfa_util
 
 
-def fit(seqs_train, x_dim=3, bin_width=0.02, min_var_frac=0.01, em_tol=1.0E-8,
+def fit(seqs_train, x_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
         em_max_iters=500, tau_init=0.1, eps_init=1.0E-3, freq_ll=5,
         verbose=False):
     """
@@ -38,9 +38,9 @@ def fit(seqs_train, x_dim=3, bin_width=0.02, min_var_frac=0.01, em_tol=1.0E-8,
     x_dim : int, optional
         state dimensionality
         Default: 3
-    bin_width : float, optional
+    bin_size : float, optional
         spike bin width in msec
-        Default: 20.0
+        Default: 0.02 [s]
     min_var_frac : float, optional
         fraction of overall data variance for each observed dimension to set as
         the private variance floor.  This is used to combat Heywood cases,
@@ -55,7 +55,7 @@ def fit(seqs_train, x_dim=3, bin_width=0.02, min_var_frac=0.01, em_tol=1.0E-8,
         Default: 500
     tau_init : float, optional
         GP timescale initialization in msec
-        Default: 100
+        Default: 0.1 [s]
     eps_init : float, optional
         GP noise variance initialization
         Default: 1e-3
@@ -75,7 +75,7 @@ def fit(seqs_train, x_dim=3, bin_width=0.02, min_var_frac=0.01, em_tol=1.0E-8,
             covType: {'rbf', 'tri', 'logexp'}
                 type of GP covariance
             gamma: np.ndarray of shape (1, #latent_vars)
-                related to GP timescales by 'bin_width / sqrt(gamma)'
+                related to GP timescales by 'bin_size / sqrt(gamma)'
             eps: np.ndarray of shape (1, #latent_vars)
                 GP noise variances
             d: np.ndarray of shape (#units, 1)
@@ -105,7 +105,7 @@ def fit(seqs_train, x_dim=3, bin_width=0.02, min_var_frac=0.01, em_tol=1.0E-8,
     params_init['covType'] = 'rbf'
     # GP timescale
     # Assume binWidth is the time step size.
-    params_init['gamma'] = (bin_width / tau_init) ** 2 * np.ones(x_dim)
+    params_init['gamma'] = (bin_size / tau_init) ** 2 * np.ones(x_dim)
     # GP noise variance
     params_init['eps'] = eps_init * np.ones(x_dim)
 
@@ -156,7 +156,7 @@ def em(params_init, seqs_train, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
             type of GP covariance
         gamma : np.ndarray of shape (1, #latent_vars)
             related to GP timescales by
-            'bin_width / sqrt(gamma)'
+            'bin_size / sqrt(gamma)'
         eps : np.ndarray of shape (1, #latent_vars)
             GP noise variances
         d : np.ndarray of shape (#units, 1)
@@ -516,7 +516,7 @@ def orthonormalize(params_est, seqs):
             type of GP covariance
             Currently, only 'rbf' is supported.
         gamma : np.ndarray of shape (1, #latent_vars)
-            related to GP timescales by 'bin_width / sqrt(gamma)'
+            related to GP timescales by 'bin_size / sqrt(gamma)'
         eps : np.ndarray of shape (1, #latent_vars)
             GP noise variances
         d : np.ndarray of shape (#units, 1)
