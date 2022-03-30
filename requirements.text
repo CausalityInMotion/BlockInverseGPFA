@@ -1,0 +1,17 @@
+bandit==1.7.3
+gitdb==4.0.9
+GitPython==3.1.27
+joblib==1.1.0
+neo==0.10.0
+numpy==1.22.2
+pbr==5.8.1
+pycodestyle==2.8.0
+PyYAML==6.0
+quantities==0.13.0
+scikit-learn==1.0.2
+scipy==1.8.0
+sklearn==0.0
+smmap==5.0.0
+stevedore==3.5.0
+threadpoolctl==3.1.0
+tqdm==4.63.0
