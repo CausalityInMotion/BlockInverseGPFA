@@ -49,7 +49,7 @@ https://viziphant.readthedocs.io/en/latest/modules.html
 Tutorial
 --------
 
-:doc:`View tutorial <../tutorials/gpfa>`
+:tutorial:`View tutorial <../tutorial/gpfa>`
 
 Run tutorial interactively:
 
@@ -64,13 +64,12 @@ The code was ported from the MATLAB code based on Byron Yu's implementation.
 The original MATLAB code is available at Byron Yu's website:
 https://users.ece.cmu.edu/~byronyu/software.shtml
 
-:copyright: Copyright 2014-2020 by the Elephant team, see AUTHORS.txt.
+:copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
 :license: Modified BSD, see LICENSE.txt for details.
 """
 
 from __future__ import division, print_function, unicode_literals
 
-import warnings
 import numpy as np
 import sklearn
 from . import gpfa_core
@@ -194,26 +193,39 @@ class GPFA(sklearn.base.BaseEstimator):
     fit_transform
     score
 
-    Examples
+    Example
     --------
-    In the following example, we calculate the neural trajectories of 20
-    independent Poisson spike trains recorded in 50 trials with randomized
-    rates up to 100 Hz.
+    The following example computes the trajectories sampled from a random
+    multivariate Gaussian process.
 
     >>> import numpy as np
-    >>> import quantities as pq
-    >>> from elephant.gpfa import GPFA
-    >>> from elephant.spike_train_generation import homogeneous_poisson_process
-    >>> data = []
-    >>> for trial in range(50):
-    >>>     n_channels = 20
-    >>>     firing_rates = np.random.randint(low=1, high=100,
-    ...                                      size=n_channels) * pq.Hz
-    >>>     spike_times = [homogeneous_poisson_process(rate=rate)
-    ...                    for rate in firing_rates]
-    >>>     data.append((trial, spike_times))
-    ...
-    >>> gpfa = GPFA(bin_size=20*pq.ms, x_dim=8)
+    >>> from gpfa import GPFA, gpfa_util
+
+    >>> # get random parameters
+    >>> sigma_f = 1.0
+    >>> tau_f = 0.7
+
+    >>> # get some finte number of points
+    >>> x = np.arange(0, 10, 0.01).reshape(-1,1)
+
+    >>> # mean and covariance
+    >>> mu = np.zeros(x.shape) + 3  # where 3 is an offset
+    >>> # define covariance
+
+    >>> sqdist = np.sum(x**2, 1).reshape(-1, 1)
+    ...                     + np.sum(x**2, 1) - 2 * np.dot(x, x.T)
+    >>> cov = sigma_f**2 * np.exp(-0.5 / tau_f**2 * sqdist)
+
+    >>> # Draw samples from the prior and add gaussian noise
+    >>> samples = np.random.multivariate_normal(mu.ravel(), cov, 3)
+    ...                             + np.random.normal(0,0.005,x.shape[0])
+
+    >>> # get data (samples) into the right format
+    >>> bin_size = 0.02  # [s]
+    >>> sample_list = [samples]
+
+    >>> data = gpfa_util.get_seqs(sample_list, bin_size)
+    >>> gpfa = GPFA(bin_size=bin_size, x_dim=2)
     >>> gpfa.fit(data)
     >>> results = gpfa.transform(data, returned_data=['latent_variable_orth',
     ...                                               'latent_variable'])
@@ -244,6 +256,7 @@ class GPFA(sklearn.base.BaseEstimator):
             'Vsm',
             'VsmGP',
             'y')
+        self.has_spikes_bool = None
         self.verbose = verbose
 
         # will be updated later
@@ -262,7 +275,7 @@ class GPFA(sklearn.base.BaseEstimator):
             The outer list corresponds to trials and the inner list corresponds
             to the neurons recorded in that trial, such that
             `spiketrains[l][n]` is the spike train of neuron `n` in trial `l`.
-            
+
         Returns
         -------
         self : object
