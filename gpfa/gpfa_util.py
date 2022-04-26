@@ -51,7 +51,7 @@ def get_seqs(data, bin_size, use_sqrt=True):
 
     if not isinstance(data, list):
         raise TypeError("'data' must be a 'list'")
-    for _, d in enumerate(data):
+    for d in data:
         if not isinstance(d, np.ndarray):
             raise TypeError("'data' must be a 'list' containing np.ndarrays")
 
