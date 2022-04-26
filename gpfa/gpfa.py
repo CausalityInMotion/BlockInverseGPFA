@@ -215,7 +215,7 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> timesteps = len(t)                        # number of time points
 
     >>> # mean
-    >>> mu = np.zeros(x.shape) + 3  # where 3 is an offset
+    >>> mu = np.zeros(x.shape)
     >>> # Create covariance matrix for GP using the squared
     >>> # exponential kernel from Yu et al.
     >>> sqdist = (t - t.T)**2
@@ -234,8 +234,8 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> bin_size = 0.02  # [s]
     >>> sample_list = [Y]
 
-    >>> # get data into the right format, but don't take the square root
-    >>> data = gpfa_util.get_seqs(sample_list, bin_size, use_sqrt=False)
+    >>> # get data into the right format
+    >>> data = np.array([(Y.shape[1], Y)], dtype=[('T', int), ('y', 'O')])
     >>> gpfa = GPFA(bin_size=bin_size, x_dim=2)
     >>> gpfa.fit(data)
     >>> results = gpfa.transform(data, returned_data=['latent_variable_orth',
