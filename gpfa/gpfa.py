@@ -65,6 +65,7 @@ The original MATLAB code is available at Byron Yu's website:
 https://users.ece.cmu.edu/~byronyu/software.shtml
 
 :copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
+:copyright: Copyright 2014-2020 by the Elephant team.
 :license: Modified BSD, see LICENSE.txt for details.
 """
 
@@ -204,27 +205,37 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> # get random parameters
     >>> sigma_f = 1.0
     >>> tau_f = 0.7
+    >>> N = 10                                    # number of neurons
+    >>> x_dims = 3                                # number of latent state
+    >>> C = np.random.uniform(0, 2, (N, x_dims))  # loading matrix
+    >>> sigma_n = np.random.uniform(0.2, 0.75, N) # noise parameters
 
     >>> # get some finte number of points
-    >>> x = np.arange(0, 10, 0.01).reshape(-1,1)
+    >>> t = np.arange(0, 10, 0.01).reshape(-1,1)  # time series
+    >>> timesteps = len(t)                        # number of time points
 
-    >>> # mean and covariance
+    >>> # mean
     >>> mu = np.zeros(x.shape) + 3  # where 3 is an offset
-    >>> # define covariance
-
-    >>> sqdist = np.sum(x**2, 1).reshape(-1, 1)
-    ...                     + np.sum(x**2, 1) - 2 * np.dot(x, x.T)
+    >>> # Create covariance matrix for GP using the squared
+    >>> # exponential kernel from Yu et al.
+    >>> sqdist = (t - t.T)**2
     >>> cov = sigma_f**2 * np.exp(-0.5 / tau_f**2 * sqdist)
+    ...                             + 1e-8*np.eye(timesteps)
 
-    >>> # Draw samples from the prior and add gaussian noise
-    >>> samples = np.random.multivariate_normal(mu.ravel(), cov, 3)
-    ...                             + np.random.normal(0,0.005,x.shape[0])
+    >>> # Draw three latent state samples from a Gaussian process
+    >>> # using the above cov
+    >>> x = np.random.multivariate_normal(mu.ravel(), cov, x_dims)
+    ...                            + np.random.normal(0,0.005,t.shape[0])
 
-    >>> # get data (samples) into the right format
+    >>> # observations have Gaussian noise
+    >>> Y = C@x + np.random.normal(0, sigma_n, (timesteps, N)).T
+
+    >>> # get data into the right format
     >>> bin_size = 0.02  # [s]
-    >>> sample_list = [samples]
+    >>> sample_list = [Y]
 
-    >>> data = gpfa_util.get_seqs(sample_list, bin_size)
+    >>> # get data into the right format, but don't take the square root
+    >>> data = gpfa_util.get_seqs(sample_list, bin_size, use_sqrt=False)
     >>> gpfa = GPFA(bin_size=bin_size, x_dim=2)
     >>> gpfa.fit(data)
     >>> results = gpfa.transform(data, returned_data=['latent_variable_orth',
@@ -234,7 +245,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
     or simply
 
-    >>> results = GPFA(bin_size=20*pq.ms, x_dim=8).fit_transform(data,
+    >>> results = GPFA(bin_size=bin_size, x_dim=x_dims).fit_transform(data,
     ...                returned_data=['latent_variable_orth',
     ...                               'latent_variable'])
     """
