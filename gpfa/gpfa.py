@@ -203,14 +203,15 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> from gpfa import GPFA, gpfa_util
 
     >>> # get random parameters
-    >>> np.random.seed(0)
-    >>> bin_size = 0.02                           # [s]
+    >>> np.random.seed(8)
+    >>> bin_size = 0.02                             # [s]
     >>> sigma_f = 1.0
+    >>> sigma_n = 1e-8
     >>> tau_f = 0.7
-    >>> N = 10                                    # number of neurons
-    >>> x_dims = 3                                # number of latent state
-    >>> C = np.random.uniform(0, 2, (N, x_dims))  # loading matrix
-    >>> sigma_n = np.random.uniform(0.2, 0.75, N) # noise parameters
+    >>> N = 10                                      # number of neurons
+    >>> x_dims = 3                                  # number of latent state
+    >>> C = np.random.uniform(0, 2, (N, x_dims))    # loading matrix
+    >>> obs_noise = np.random.uniform(0.2, 0.75, N) # noise parameters
 
     >>> # get some finte number of points
     >>> t = np.arange(0, 10, 0.01).reshape(-1,1)  # time series
@@ -222,15 +223,15 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> # exponential kernel from Yu et al.
     >>> sqdist = (t - t.T)**2
     >>> cov = sigma_f**2 * np.exp(-0.5 / tau_f**2 * sqdist)
-    ...           + 1e-8*np.diag(np.random.normal(0, 0.01, timesteps))
+    ...                            + sigma_n*np.eye(timesteps)
 
     >>> # Draw three latent state samples from a Gaussian process
     >>> # using the above cov
     >>> x = np.random.multivariate_normal(mu.ravel(), cov, x_dims)
-    ...                            + np.random.normal(0,0.005,t.shape[0])
+    ...                            + sigma_n*np.eye(x_dims, timesteps)
 
     >>> # observations have Gaussian noise
-    >>> Y = C@x + np.random.normal(0, sigma_n, (timesteps, N)).T
+    >>> Y = C@x + np.random.normal(0, obs_noise, (timesteps, N)).T
 
     >>> # get data into the right format
     >>> data = np.array([(Y.shape[1], Y)], dtype=[('T', int), ('y', 'O')])
