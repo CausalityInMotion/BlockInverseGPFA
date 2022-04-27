@@ -203,6 +203,7 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> from gpfa import GPFA, gpfa_util
 
     >>> # get random parameters
+    >>> np.random.seed(0)
     >>> bin_size = 0.02                           # [s]
     >>> sigma_f = 1.0
     >>> tau_f = 0.7
@@ -213,7 +214,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
     >>> # get some finte number of points
     >>> t = np.arange(0, 10, 0.01).reshape(-1,1)  # time series
-    >>> timesteps = len(t)                        # number of time points
+    >>> timesteps = t.shape[0]                    # number of time points
 
     >>> # mean
     >>> mu = np.zeros(x.shape)
@@ -221,7 +222,7 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> # exponential kernel from Yu et al.
     >>> sqdist = (t - t.T)**2
     >>> cov = sigma_f**2 * np.exp(-0.5 / tau_f**2 * sqdist)
-    ...                             + 1e-8*np.eye(timesteps)
+    ...           + 1e-8*np.diag(np.random.normal(0, 0.01, timesteps))
 
     >>> # Draw three latent state samples from a Gaussian process
     >>> # using the above cov
