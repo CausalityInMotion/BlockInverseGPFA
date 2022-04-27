@@ -232,7 +232,6 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> Y = C@x + np.random.normal(0, sigma_n, (timesteps, N)).T
 
     >>> # get data into the right format
-    >>> sample_list = [Y]
     >>> data = np.array([(Y.shape[1], Y)], dtype=[('T', int), ('y', 'O')])
     >>> gpfa = GPFA(bin_size=bin_size, x_dim=2)
     >>> gpfa.fit(data)
