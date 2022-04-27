@@ -223,7 +223,7 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> # exponential kernel from Yu et al.
     >>> sqdist = (t - t.T)**2
     >>> cov = sigma_f**2 * np.exp(-0.5 / tau_f**2 * sqdist)
-    ...                            + sigma_n*np.eye(timesteps)
+    ...                            + sigma_n**2 * np.eye(timesteps)
 
     >>> # Draw three latent state samples from a Gaussian process
     >>> # using the above cov
