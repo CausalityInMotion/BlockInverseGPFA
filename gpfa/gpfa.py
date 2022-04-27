@@ -218,7 +218,7 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> timesteps = t.shape[0]                    # number of time points
 
     >>> # mean
-    >>> mu = np.zeros(x.shape)
+    >>> mu = np.zeros(t.shape)
     >>> # Create covariance matrix for GP using the squared
     >>> # exponential kernel from Yu et al.
     >>> sqdist = (t - t.T)**2
@@ -228,7 +228,6 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> # Draw three latent state samples from a Gaussian process
     >>> # using the above cov
     >>> x = np.random.multivariate_normal(mu.ravel(), cov, x_dims)
-    ...                            + sigma_n*np.eye(x_dims, timesteps)
 
     >>> # observations have Gaussian noise
     >>> Y = C@x + np.random.normal(0, obs_noise, (timesteps, N)).T
