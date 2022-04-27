@@ -203,6 +203,7 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> from gpfa import GPFA, gpfa_util
 
     >>> # get random parameters
+    >>> bin_size = 0.02                           # [s]
     >>> sigma_f = 1.0
     >>> tau_f = 0.7
     >>> N = 10                                    # number of neurons
@@ -231,10 +232,7 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> Y = C@x + np.random.normal(0, sigma_n, (timesteps, N)).T
 
     >>> # get data into the right format
-    >>> bin_size = 0.02  # [s]
     >>> sample_list = [Y]
-
-    >>> # get data into the right format
     >>> data = np.array([(Y.shape[1], Y)], dtype=[('T', int), ('y', 'O')])
     >>> gpfa = GPFA(bin_size=bin_size, x_dim=2)
     >>> gpfa.fit(data)
