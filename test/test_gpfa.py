@@ -2,6 +2,7 @@
 GPFA Unittests.
 
 :copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
+:copyright: Copyright 2014-2020 by the Elephant team.
 :license: Modified BSD, see LICENSE.txt for details.
 """
 

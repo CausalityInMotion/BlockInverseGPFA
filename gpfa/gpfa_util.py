@@ -1,8 +1,8 @@
-# -*- coding: utf-8 -*-
 """
 GPFA util functions.
 
 :copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
+:copyright: Copyright 2014-2020 by the Elephant team.
 :license: Modified BSD, see LICENSE.txt for details.
 """
 
@@ -20,12 +20,12 @@ def get_seqs(data, bin_size, use_sqrt=True):
 
     Parameters
     ----------
-    data : numpy.ndarray
+    data : A list of numpy.ndarray
         The outer array corresponds to trials and the inner array
         corresponds to the neurons recorded in that trial, such
         that data[l][n] is the spike train of neuron n in trial l.
     bin_size: int
-        Spike bin width in ms
+        Spike bin width in [s] e.g., 0.02, 0.05, 0.1, 1, etc.
 
     use_sqrt: bool
         Boolean specifying whether or not to use square-root transform on
@@ -45,14 +45,21 @@ def get_seqs(data, bin_size, use_sqrt=True):
     Raises
     ------
     TypeError
-        if `data` type is not np.ndarray.
+        if `data` type is not a list.
+        if `data` type is not a list containg np.ndarrays.
     """
 
-    if not isinstance(data, np.ndarray):
-        raise TypeError("'data' must be of type np.ndarray")
+    if not isinstance(data, list):
+        raise TypeError("'data' must be a 'list'")
+    for d in data:
+        if not isinstance(d, np.ndarray):
+            raise TypeError("'data' must be a 'list' containing np.ndarrays")
 
     seqs = []
     n_trials = len(data)
+
+    # for computational convenience change bin_size to int
+    bin_size = int(bin_size * 1000)
 
     # loop over all trials
     for t in range(n_trials):
@@ -245,7 +252,7 @@ def make_k_big(params, n_timesteps):
         # the original MATLAB program uses here a special algorithm, provided
         # in C and MEX, for inversion of Toeplitz matrix:
         # [K_big_inv(idx+i, idx+i), logdet_K] = invToeplitz(K);
-        # TODO: use an inversion method optimized for Toeplitz matrix
+        # TO-DO: use an inversion method optimized for Toeplitz matrix
         # Below is an attempt to use such a method, not leading to a speed-up.
         # # K_big_inv[i::xDim, i::xDim] = sp.linalg.solve_toeplitz((K[:, 0],
         # K[0, :]), np.eye(T))

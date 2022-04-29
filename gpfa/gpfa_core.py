@@ -1,8 +1,8 @@
-# -*- coding: utf-8 -*-
 """
 GPFA core functionality.
 
 :copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
+:copyright: Copyright 2014-2020 by the Elephant team.
 :license: Modified BSD, see LICENSE.txt for details.
 """
 
@@ -101,7 +101,7 @@ def fit(seqs_train, x_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
     # ==================================
     # Initialize state model parameters
     # ==================================
-    params_init = dict()
+    params_init = {}
     params_init['covType'] = 'rbf'
     # GP timescale
     # Assume binWidth is the time step size.
