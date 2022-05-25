@@ -205,9 +205,9 @@ class TestGPFA(unittest.TestCase):
             )
         # Assert
         self.assertTrue(np.allclose(
-            seqs_latent['latent_variable'][0][0],
+            seqs_latent['pZ_mu'][0][0],
             latent_var[0]))
-        self.assertTrue(np.allclose(seqs_latent['Vsm'][0][0][0], cov[0][0]))
+        self.assertTrue(np.allclose(seqs_latent['pZ_cov'][0][0][0], cov[0][0]))
 
     def test_fill_persymm(self):
         """

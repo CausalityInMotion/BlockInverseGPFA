@@ -28,16 +28,16 @@ def fit(X, z_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
 
     Parameters
     ----------
-    X   : a list of observation sequences (in a matrix) per trial.
-        Each element in `X` is a matrix of size `x_dim` x `bins`,
-        containing an observation sequence (not spikes or spike count)
-        within each trial. The input dimensionality `x_dim` needs to
-        be the same across all elements in `X`, but bins can differ.
+    X   : a list of observation sequences, one per trial.
+        Each element in X is a matrix of size #x_dim x #bins,
+        containing an observation sequence. The input dimensionality
+        #x_dim needs to be the same across elements in X, but #bins
+        can be different for each observation sequence.
     z_dim : int, optional
         latent state dimensionality
         Default: 3
     bin_size : float, optional
-        spike bin width in sec
+        observed data bin width in sec
         Default: 0.02 [s]
     min_var_frac : float, optional
         fraction of overall data variance for each observed dimension to set as
@@ -142,7 +142,7 @@ def fit(X, z_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
 
 
 def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
-        freq_ll=5, verbose=False):
+       freq_ll=5, verbose=False):
     """
     Fits GPFA model parameters using expectation-maximization (EM) algorithm.
 
@@ -198,12 +198,12 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
     seqs_latent : numpy.recarray
         a copy of the training data structure, augmented with the new
         fields:
-        latent_variable : numpy.ndarray of shape (#z_dim x #bins)
+        pZ_mu : numpy.ndarray of shape (#z_dim x #bins)
             posterior mean of latent variables at each time bin
-        Vsm : numpy.ndarray of shape (#z_dim, #z_dim, #bins)
+        pZ_cov : numpy.ndarray of shape (#z_dim, #z_dim, #bins)
             posterior covariance between latent variables at each
             timepoint
-        VsmGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
+        pZ_covGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
             posterior covariance over time for each latent
             variable
     ll : list
@@ -237,11 +237,11 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
         # ==== M STEP ====
         sum_p_auto = np.zeros((z_dim, z_dim))
         for seq_latent in seqs_latent:
-            sum_p_auto += seq_latent['Vsm'].sum(axis=2) \
-                + seq_latent['latent_variable'].dot(
-                seq_latent['latent_variable'].T)
+            sum_p_auto += seq_latent['pZ_cov'].sum(axis=2) \
+                + seq_latent['pZ_mu'].dot(
+                seq_latent['pZ_mu'].T)
         X_all = np.hstack(X)
-        Z_all = np.hstack(seqs_latent['latent_variable'])
+        Z_all = np.hstack(seqs_latent['pZ_mu'])
         sum_XZtrans = X_all.dot(Z_all.T)
         sum_Zall = Z_all.sum(axis=1)[:, np.newaxis]
         sum_Xall = X_all.sum(axis=1)[:, np.newaxis]
@@ -262,20 +262,20 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
         c = params['C']
         d = params['d'][:, np.newaxis]
         if params['notes']['RforceDiagonal']:
-            sum_xxtrans = (X_all * X_all).sum(axis=1)[:, np.newaxis]
+            sum_XXtrans = (X_all * X_all).sum(axis=1)[:, np.newaxis]
             xd = sum_Xall * d
             term = ((sum_XZtrans - d.dot(sum_Zall.T)) * c).sum(axis=1)
             term = term[:, np.newaxis]
-            r = d ** 2 + (sum_xxtrans - 2 * xd - term) / T.sum()
+            r = d ** 2 + (sum_XXtrans - 2 * xd - term) / T.sum()
 
             # Set minimum private variance
             r = np.maximum(var_floor, r)
             params['R'] = np.diag(r[:, 0])
         else:
-            sum_xxtrans = X_all.dot(X_all.T)
+            sum_XXtrans = X_all.dot(X_all.T)
             xd = sum_Xall.dot(d.T)
             term = (sum_XZtrans - d.dot(sum_Zall.T)).dot(c.T)
-            r = d.dot(d.T) + (sum_xxtrans - xd - xd.T - term) / T.sum()
+            r = d.dot(d.T) + (sum_XXtrans - xd - xd.T - term) / T.sum()
 
             params['R'] = (r + r.T) / 2  # ensure symmetry
 
@@ -338,14 +338,12 @@ def infer_latents(X, params, get_ll=True):
             input data structure, whose n-th element (corresponding to the n-th
             experimental trial) has fields:
             X : numpy.ndarray of shape (#x_dim, #bins)
-        latent_variable :  (#z_dim, #bins) numpy.ndarray
-              posterior mean of latent variables at each time bin
-        Vsm :  (#z_dim, #z_dim, #bins) numpy.ndarray
-              posterior covariance between latent variables at each
-              timepoint
-        VsmGP :  (#bins, #bins, #z_dim) numpy.ndarray
-                posterior covariance over time for each latent
-                variable
+        pZ_mu : (#z_dim, #bins) numpy.ndarray
+            posterior mean of latent variables at each time bin
+        pZ_cov : (#z_dim, #z_dim, #bins) numpy.ndarray
+            posterior covariance between latent variables at each timepoint
+        pZ_covGP : (#bins, #bins, #z_dim) numpy.ndarray
+                posterior covariance over time for each latent variable
     ll : float
         data log likelihood, numpy.nan is returned when `get_ll` is set False
     """
@@ -357,8 +355,8 @@ def infer_latents(X, params, get_ll=True):
         seq['X'] = X[s]
 
     dtype_out = [(i, X_out[i].dtype) for i in X_out.dtype.names]
-    dtype_out.extend([('latent_variable', object), ('Vsm', object),
-                      ('VsmGP', object)])
+    dtype_out.extend([('pZ_mu', object), ('pZ_cov', object),
+                      ('pZ_covGP', object)])
     seqs_latent = np.empty(len(X_out), dtype=dtype_out)
     for dtype_name in X_out.dtype.names:
         seqs_latent[dtype_name] = X_out[dtype_name]
@@ -423,14 +421,14 @@ def infer_latents(X, params, get_ll=True):
             gpfa_util.fill_persymm(np.eye(z_dim * t_half, z_dim * t) -
                                    blk_prod, z_dim, t))
         # latent_variableMat is (z_dim*T) x length(nList)
-        latent_variable_mat = gpfa_util.fill_persymm(
+        Z_mat = gpfa_util.fill_persymm(
             blk_prod, z_dim, t).dot(term1_mat)
 
         for i, n in enumerate(n_list):
-            seqs_latent[n]['latent_variable'] = \
-                latent_variable_mat[:, i].reshape((z_dim, t), order='F')
-            seqs_latent[n]['Vsm'] = vsm
-            seqs_latent[n]['VsmGP'] = vsm_gp
+            seqs_latent[n]['pZ_mu'] = \
+                Z_mat[:, i].reshape((z_dim, t), order='F')
+            seqs_latent[n]['pZ_cov'] = vsm
+            seqs_latent[n]['pZ_covGP'] = vsm_gp
 
         if get_ll:
             # Compute data likelihood
@@ -520,7 +518,7 @@ def orthonormalize(params_est, seqs):
         d : numpy.ndarray of shape (#x_dim, 1)
             observation mean
         C : numpy.ndarray of shape (#x_dim, #z_dim)
-            mapping between the neuronal data space and the latent variable
+            mapping between the observational space and the latent variable
             space
         R : numpy.ndarray of shape (#x_dim, #z_dim)
             observation noise covariance
@@ -531,14 +529,13 @@ def orthonormalize(params_est, seqs):
         Data structure, whose n-th entry (corresponding to the n-th
         experimental trial) has field
         X : numpy.ndarray of shape (#x_dim, #bins)
-          observed data
-        latent_variable : numpy.ndarray of shape (#z_dim, #bins)
-          posterior mean of latent variables at each time bin
-        Vsm : numpy.ndarray of shape (#z_dim, #z_dim, #bins)
-          posterior covariance between latent variables at each
-          timepoint
-        VsmGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
-          posterior covariance over time for each latent variable
+            observed data
+        pZ_mu : numpy.ndarray of shape (#z_dim, #bins)
+            posterior mean of latent variables at each time bin
+        pZ_cov : numpy.ndarray of shape (#z_dim, #z_dim, #bins)
+            posterior covariance between latent variables at each timepoint
+        pZ_covGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
+            posterior covariance over time for each latent variable
 
     Returns
     -------
@@ -547,13 +544,12 @@ def orthonormalize(params_est, seqs):
         orthonormalizing the columns of C.
     seqs : numpy.recarray
         Training data structure that contains the new field
-        `latent_variable_orth`, the orthonormalized neural trajectories.
+        `pZ_mu_orth`, the orthonormalized neural trajectories.
     """
     C = params_est['C']
-    Z_all = np.hstack(seqs['latent_variable'])
-    latent_variable_orth, Corth, _ = gpfa_util.orthonormalize(Z_all, C)
-    seqs = gpfa_util.segment_by_trial(
-        seqs, latent_variable_orth, 'latent_variable_orth')
+    Z_all = np.hstack(seqs['pZ_mu'])
+    pZ_mu_orth, Corth, _ = gpfa_util.orthonormalize(Z_all, C)
+    seqs = gpfa_util.segment_by_trial(seqs, pZ_mu_orth, 'pZ_mu_orth')
 
     params_est['Corth'] = Corth
 

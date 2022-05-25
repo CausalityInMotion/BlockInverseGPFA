@@ -1,16 +1,16 @@
 """
 Gaussian-process factor analysis (GPFA) is a dimensionality reduction method
-:cite:`gpfa-Yu2008_1881` for neural trajectory visualization of parallel spike
-trains. GPFA applies factor analysis (FA) to time-binned spike count data to
-reduce the dimensionality and at the same time smoothes the resulting
-low-dimensional trajectories by fitting a Gaussian process (GP) model to them.
+:cite:`gpfa-Yu2008_1881` for latent trajectory visualization. GPFA applies f
+actor analysis (FA) to observed data to reduce the dimensionality and at the
+same time smoothes the resulting low-dimensional trajectories by fitting a
+Gaussian process (GP) model to them.
 
-The input consists of a set of trials (X), each containing a list of spike
-trains (N neurons). The output is the projection (Z) of the data in a space
-of pre-chosen dimensionality z_dim < N.
+The input consists of a set of trials (X), each containing a list of
+observation sequences, one per trial. The output is the projection (Z) of the
+data in a space of pre-chosen dimensionality z_dim < N.
 
 Under the assumption of a linear relation (transform matrix C) between the
-latent variable Z following a Gaussian process and the spike train data X with
+latent variable Z following a Gaussian process and the observation X with
 a bias d and  a noise term of zero mean and (co)variance R (i.e.,
 :math:`X = C@Z + d + Gauss(0,R)`), the projection corresponds to the
 conditional probability E[Z|X].
@@ -55,7 +55,7 @@ __all__ = [
 
 class GPFA(sklearn.base.BaseEstimator):
     """
-    Apply Gaussian process factor analysis (GPFA) to spike train data
+    Apply Gaussian process factor analysis (GPFA) to observed data
 
     There are two principle scenarios of using the GPFA analysis, both of which
     can be performed in an instance of the GPFA() class.
@@ -85,7 +85,7 @@ class GPFA(sklearn.base.BaseEstimator):
         latent state dimensionality
         Default: 3
     bin_size : float, optional
-        spike bin width in sec
+        observed data bin width in sec
         Default: 0.02
     min_var_frac : float, optional
         fraction of overall data variance for each observed dimension to set as
@@ -215,16 +215,15 @@ class GPFA(sklearn.base.BaseEstimator):
 
     >>> gpfa = GPFA(bin_size=bin_size, z_dim=2)
     >>> gpfa.fit(data)
-    >>> results = gpfa.transform(data, returned_data=['latent_variable_orth',
-    ...                                               'latent_variable'])
-    >>> latent_variable_orth = results['latent_variable_orth']
-    >>> latent_variable = results['latent_variable']
+    >>> results = gpfa.transform(data, returned_data=['pZ_mu_orth',
+    ...                                               'pZ_mu'])
+    >>> pZ_mu_orth = results['pZ_mu_orth']
+    >>> pZ_mu = results['pZ_mu']
 
     or simply
 
     >>> results = GPFA(bin_size=bin_size, z_dim=z_dim).fit_transform(data,
-    ...                returned_data=['latent_variable_orth',
-    ...                               'latent_variable'])
+    ...                returned_data=['pZ_mu_orth', 'pZ_mu'])
     """
 
     def __init__(self, bin_size=0.02, z_dim=3, min_var_frac=0.01,
@@ -239,10 +238,10 @@ class GPFA(sklearn.base.BaseEstimator):
         self.em_max_iters = em_max_iters
         self.freq_ll = freq_ll
         self.valid_data_names = (
-            'latent_variable_orth',
-            'latent_variable',
-            'Vsm',
-            'VsmGP',
+            'pZ_mu_orth',
+            'pZ_mu',
+            'pZ_cov',
+            'pZ_covGP',
             'X')
         self.has_spikes_bool = None
         self.verbose = verbose
@@ -258,11 +257,11 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X   : a list of observation sequences (in a matrix) per trial.
-            Each element in `X` is a matrix of size `x_dim` x `bins`,
-            containing an observation sequence (not spikes or spike count)
-            within each trial. The input dimensionality `x_dim` needs to
-            be the same across all elements in `X`, but bins can differ.
+        X   : a list of observation sequences, one per trial.
+            Each element in X is a matrix of size #x_dim x #bins,
+            containing an observation sequence. The input dimensionality
+            #x_dim needs to be the same across elements in X, but #bins
+            can be different for each observation sequence.
 
         Returns
         -------
@@ -307,7 +306,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return self
 
-    def transform(self, X, returned_data=['latent_variable_orth']):
+    def transform(self, X, returned_data=['pZ_mu_orth']):
         """
         Obtain trajectories of neural activity in a low-dimensional latent
         variable space by inferring the posterior mean of the obtained GPFA
@@ -315,34 +314,35 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X   : a list of observation sequences (in a matrix) per trial.
-            Each element in `X` is a matrix of size `x_dim` x `bins`,
-            containing an observation sequence (not spikes or spike count)
-            within each trial. The input dimensionality `x_dim` needs to
-            be the same across all elements in `X`, but bins can differ.
+        X   : a list of observation sequences, one per trial.
+            Each element in X is a matrix of size #x_dim x #bins,
+            containing an observation sequence. The input dimensionality
+            #x_dim needs to be the same across elements in X, but #bins
+            can be different for each observation sequence.
 
         returned_data : list of str
             Set `returned_data` to a list of str of desired resultant data e.g:
-            `returned_data = ['latent_variable_orth']`
+            `returned_data = ['pZ_mu_orth']`
             The dimensionality reduction transform generates the following
             resultant data:
 
-               'latent_variable_orth': orthonormalized posterior mean of latent
+               'pZ_mu_orth': orthonormalized posterior mean of latent
                variable
 
-               'latent_variable': posterior mean of latent variable before
+               'pZ_mu': posterior mean of latent variable before
                orthonormalization
 
-               'Vsm': posterior covariance between latent variables
+               'pZ_cov': posterior covariance between latent variables
 
-               'VsmGP': posterior covariance over time for each latent variable
+               'pZ_covGP': posterior covariance over time for each latent 
+                variable
 
                'X': observed data used to estimate the GPFA model parameters
 
             `returned_data` specifies the keys by which the data dict is
             returned.
 
-            Default is ['latent_variable_orth'].
+            Default is ['pZ_mu_orth'].
 
         Returns
         -------
@@ -357,15 +357,15 @@ class GPFA(sklearn.base.BaseEstimator):
             following shape, specific to each data type, containing the
             corresponding data for the n-th trial:
 
-                `latent_variable_orth`: (#z_dim, #bins) numpy.ndarray
+                `pZ_mu_orth`: (#z_dim, #bins) numpy.ndarray
 
-                `latent_variable`:  (#z_dim, #bins) numpy.ndarray
+                `pZ_mu`:  (#z_dim, #bins) numpy.ndarray
 
                 `X`:  (#x_dim, #bins) numpy.ndarray
 
-                `Vsm`:  (#z_dim, #z_dim, #bins) numpy.ndarray
+                `pZ_cov`:  (#z_dim, #z_dim, #bins) numpy.ndarray
 
-                `VsmGP`:  (#bins, #bins, #z_dim) numpy.ndarray
+                `pZ_covGP`:  (#bins, #bins, #z_dim) numpy.ndarray
 
             Note that the num. of bins (#bins) can vary across trials,
             reflecting the trial durations in the given `observed` data.
@@ -380,7 +380,7 @@ class GPFA(sklearn.base.BaseEstimator):
             `self.valid_data_names`.
         """
 
-        if len(X[0]) != len(self.has_spikes_bool):
+        if X[0].shape[0] != len(self.has_spikes_bool):
             raise ValueError("'observed data' must contain the same number of "
                              "units as the training data")
         invalid_keys = set(returned_data).difference(self.valid_data_names)
@@ -398,7 +398,7 @@ class GPFA(sklearn.base.BaseEstimator):
             return seqs[returned_data[0]]
         return {i: seqs[i] for i in returned_data}
 
-    def fit_transform(self, X, returned_data=['latent_variable_orth']):
+    def fit_transform(self, X, returned_data=['pZ_mu_orth']):
         """
         Fit the model with `observed` data and apply the dimensionality
         reduction on the `observations`.
@@ -436,11 +436,11 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X   : a list of observation sequences (in a matrix) per trial.
-            Each element in `X` is a matrix of size `x_dim` x `bins`,
-            containing an observation sequence (not spikes or spike count)
-            within each trial. The input dimensionality `x_dim` needs to
-            be the same across all elements in `X`, but bins can differ.
+        X   : a list of observation sequences, one per trial. 
+            Each element in X is a matrix of size #x_dim x #bins,
+            containing an observation sequence. The input dimensionality
+            #x_dim needs to be the same across elements in X, but #bins
+            can be different for each observation sequence.
 
         Returns
         -------

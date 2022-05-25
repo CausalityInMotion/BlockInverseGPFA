@@ -22,11 +22,11 @@ def cut_trials(X_in, seg_length=20):
 
     Parameters
     ----------
-    X_in : a list of observation sequences (in a matrix) per trial.
-        Each element in `X` is a matrix of size `x_dim` x `bins`,
-        containing an observation sequence (not spikes or spike count)
-        within each trial. The input dimensionality `x_dim` needs to
-        be the same across all elements in `X`, but bins can differ.
+    X_in : a list of observation sequences, one per trial.
+        Each element in X is a matrix of size #x_dim x #bins,
+        containing an observation sequence. The input dimensionality
+        #x_dim needs to be the same across elements in X, but #bins
+        can be different for each observation sequence.
 
     seg_length : int
         length of segments to extract, in number of timesteps. If infinite,
@@ -342,9 +342,9 @@ def make_precomp(Seqs, z_dim):
         for j in range(len(trial_lengths_num_unique)):
             # Loop once for each trial (each of nList)
             for n in precomp[i]['Tu'][j]['nList']:
-                precomp[i]['Tu'][j]['PautoSUM'] += Seqs[n]['VsmGP'][:, :, i] \
-                    + np.outer(Seqs[n]['latent_variable'][i, :],
-                               Seqs[n]['latent_variable'][i, :])
+                precomp[i]['Tu'][j]['PautoSUM'] += \
+                    Seqs[n]['pZ_covGP'][:, :, i] \
+                    + np.outer(Seqs[n]['pZ_mu'][i, :], Seqs[n]['pZ_mu'][i, :])
     return precomp
 
 
@@ -431,7 +431,7 @@ def orthonormalize(Z, l_mat):
 
     Returns
     -------
-    latent_variable_orth : (x_dim, T) numpy.ndarray
+    pZ_mu_orth : (x_dim, T) numpy.ndarray
         Orthonormalized latent variables
     Lorth : (z_dim, x_dim) numpy.ndarray
         Orthonormalized loading matrix
@@ -442,15 +442,15 @@ def orthonormalize(Z, l_mat):
     if z_dim == 1:
         TT = np.sqrt(np.dot(l_mat.T, l_mat))
         Lorth = rdiv(l_mat, TT)
-        latent_variable_orth = np.dot(TT, Z)
+        pZ_mu_orth = np.dot(TT, Z)
     else:
         UU, DD, VV = sp.linalg.svd(l_mat, full_matrices=False)
         # TT is transform matrix
         TT = np.dot(np.diag(DD), VV)
 
         Lorth = UU
-        latent_variable_orth = np.dot(TT, Z)
-    return latent_variable_orth, Lorth, TT
+        pZ_mu_orth = np.dot(TT, Z)
+    return pZ_mu_orth, Lorth, TT
 
 
 def segment_by_trial(seqs, Z, fn):
