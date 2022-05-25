@@ -22,10 +22,11 @@ def cut_trials(X_in, seg_length=20):
 
     Parameters
     ----------
-    X_in : numpy.ndarray
-        data structure containing np.ndarrays whose n-th element
-        (corresponding to the n-th experimental trial) has shape
-        of (#units, #bins)
+    X_in : a list of observation sequences (in a matrix) per trial.
+        Each element in `X` is a matrix of size `x_dim` x `bins`,
+        containing an observation sequence (not spikes or spike count)
+        within each trial. The input dimensionality `x_dim` needs to
+        be the same across all elements in `X`, but bins can differ.
 
     seg_length : int
         length of segments to extract, in number of timesteps. If infinite,
@@ -34,10 +35,10 @@ def cut_trials(X_in, seg_length=20):
 
     Returns
     -------
-    xOut : np.recarray
+    X_out : np.ndarray
         data structure containing np.ndarrays whose n-th element
-        (corresponding to the n-th segment) has shape
-        of (#units, #timesteps in segment)
+        (corresponding to the n-th segment) has shape of
+        (#x_dim x #seg_length)
 
     Raises
     ------
@@ -48,12 +49,12 @@ def cut_trials(X_in, seg_length=20):
     if seg_length == 0:
         raise ValueError("At least 1 extracted trial must be returned")
     if np.isinf(seg_length):
-        xOut = X_in
-        return xOut
-    # dtype_seqOut = [('x', object)]
-    xOut_buff = []
-    for n, seqIn_n in enumerate(X_in):
-        T = seqIn_n.shape[1]
+        X_out = X_in
+        return X_out
+
+    X_out_buff = []
+    for n, X_in_n in enumerate(X_in):
+        T = X_in_n.shape[1]
 
         # Skip trials that are shorter than segLength
         if T < seg_length:
@@ -76,18 +77,18 @@ def cut_trials(X_in, seg_length=20):
 
         seg = np.empty(numSeg, object)
 
-        for s in range(numSeg):
-            tStart = seg_length * s - cumOL[s]
-            seg[s] = seqIn_n[:, tStart:tStart + seg_length]
+        for n_seg in range(numSeg):
+            tStart = seg_length * n_seg - cumOL[n_seg]
+            seg[n_seg] = X_in_n[:, tStart:tStart + seg_length]
 
-        xOut_buff.append(seg)
+        X_out_buff.append(seg)
 
-    if len(xOut_buff) > 0:
-        xOut = np.hstack(xOut_buff)
+    if len(X_out_buff) > 0:
+        X_out = np.hstack(X_out_buff)
     else:
-        xOut = np.empty(0)
+        X_out = np.empty(0)
 
-    return xOut
+    return X_out
 
 
 def rdiv(a, b):
@@ -125,8 +126,8 @@ def make_k_big(params, n_timesteps):
     Returns
     -------
     K_big : np.ndarray
-        GP covariance matrix with dimensions (yDim * T) x (yDim * T).
-        The (t1, t2) block is diagonal, has dimensions yDim x yDim, and
+        GP covariance matrix with dimensions (z_dim * T) x (z_dim * T).
+        The (t1, t2) block is diagonal, has dimensions z_dim x z_dim, and
         represents the covariance between the state vectors at timesteps t1 and
         t2. K_big is sparse and striped.
     K_big_inv : np.ndarray
@@ -143,27 +144,27 @@ def make_k_big(params, n_timesteps):
     if params['covType'] != 'rbf':
         raise ValueError("Only 'rbf' GP covariance type is supported.")
 
-    yDim = params['C'].shape[1]
+    z_dim = params['C'].shape[1]
 
-    K_big = np.zeros((yDim * n_timesteps, yDim * n_timesteps))
-    K_big_inv = np.zeros((yDim * n_timesteps, yDim * n_timesteps))
+    K_big = np.zeros((z_dim * n_timesteps, z_dim * n_timesteps))
+    K_big_inv = np.zeros((z_dim * n_timesteps, z_dim * n_timesteps))
     Tdif = np.tile(np.arange(0, n_timesteps), (n_timesteps, 1)).T \
         - np.tile(np.arange(0, n_timesteps), (n_timesteps, 1))
     logdet_K_big = 0
 
-    for i in range(yDim):
+    for i in range(z_dim):
         K = (1 - params['eps'][i]) * np.exp(-params['gamma'][i] / 2 *
                                             Tdif ** 2) \
             + params['eps'][i] * np.eye(n_timesteps)
-        K_big[i::yDim, i::yDim] = K
+        K_big[i::z_dim, i::z_dim] = K
         # the original MATLAB program uses here a special algorithm, provided
         # in C and MEX, for inversion of Toeplitz matrix:
         # [K_big_inv(idx+i, idx+i), logdet_K] = invToeplitz(K);
         # TO-DO: use an inversion method optimized for Toeplitz matrix
         # Below is an attempt to use such a method, not leading to a speed-up.
-        # # K_big_inv[i::xDim, i::xDim] = sp.linalg.solve_toeplitz((K[:, 0],
+        # # K_big_inv[i::x_dim, i::x_dim] = sp.linalg.solve_toeplitz((K[:, 0],
         # K[0, :]), np.eye(T))
-        K_big_inv[i::yDim, i::yDim] = np.linalg.inv(K)
+        K_big_inv[i::z_dim, i::z_dim] = np.linalg.inv(K)
         logdet_K = logdet(K)
 
         logdet_K_big = logdet_K_big + logdet_K
@@ -234,7 +235,7 @@ def fill_persymm(p_in, blk_size, n_blocks, blk_size_vert=None):
 
      Parameters
      ----------
-     p_in :  (xDim*Thalf, xDim*T) np.ndarray
+     p_in :  (x_dim*Thalf, x_dim*T) np.ndarray
         Top half of block persymmetric matrix, where Thalf = ceil(T/2)
      blk_size : int
         Edge length of one block
@@ -246,7 +247,7 @@ def fill_persymm(p_in, blk_size, n_blocks, blk_size_vert=None):
 
      Returns
      -------
-     Pout : (yDim*T, yDim*T) np.ndarray
+     Pout : (z_dim*T, z_dim*T) np.ndarray
         Full block persymmetric matrix
     """
     if blk_size_vert is None:
@@ -270,20 +271,20 @@ def fill_persymm(p_in, blk_size, n_blocks, blk_size_vert=None):
     return Pout
 
 
-def make_precomp(xSeqs, yDim):
+def make_precomp(Seqs, z_dim):
     """
     Make the precomputation matrices specified by the GPFA algorithm.
 
     Parameters
     ----------
-    xSeqs : np.recarray
+    Seqs : numpy.recarray
         The sequence struct of inferred latents, etc.
-    yDim : int
+    z_dim : int
        The dimension of the latent space.
 
     Returns
     -------
-    precomp : np.recarray
+    precomp : numpy.recarray
         The precomp struct will be updated with the posterior covaraince and
         the other requirements.
 
@@ -302,7 +303,7 @@ def make_precomp(xSeqs, yDim):
     Finally, see the notes in the GPFA README.
     """
 
-    Tall = np.array([t.shape[1] for t in xSeqs['x']])
+    Tall = np.array([X_n.shape[1] for X_n in Seqs['X']])
     Tmax = max(Tall)
     Tdif = np.tile(np.arange(0, Tmax), (Tmax, 1)).T \
         - np.tile(np.arange(0, Tmax), (Tmax, 1))
@@ -310,17 +311,17 @@ def make_precomp(xSeqs, yDim):
     # assign some helpful precomp items
     # this is computationally cheap, so we keep a few loops in MATLAB
     # for ease of readability.
-    precomp = np.empty(yDim, dtype=[(
-        'absDif', object), ('difSq', object), ('Tall', object),
+    precomp = np.empty(z_dim, dtype=[(
+        'absDif', object), ('difSq', object), ('Tmax', object),
         ('Tu', object)])
-    for i in range(yDim):
+    for i in range(z_dim):
         precomp[i]['absDif'] = np.abs(Tdif)
         precomp[i]['difSq'] = Tdif ** 2
-        precomp[i]['Tall'] = Tall
+        precomp[i]['Tmax'] = Tmax
     # find unique numbers of trial lengths
     trial_lengths_num_unique = np.unique(Tall)
     # Loop once for each state dimension (each GP)
-    for i in range(yDim):
+    for i in range(z_dim):
         precomp_Tu = np.empty(len(trial_lengths_num_unique), dtype=[(
             'nList', object), ('T', int), ('numTrials', int),
             ('PautoSUM', object)])
@@ -336,14 +337,14 @@ def make_precomp(xSeqs, yDim):
     # Fill out PautoSum
     ############################################################
     # Loop once for each state dimension (each GP)
-    for i in range(yDim):
+    for i in range(z_dim):
         # Loop once for each trial length (each of Tu)
         for j in range(len(trial_lengths_num_unique)):
             # Loop once for each trial (each of nList)
             for n in precomp[i]['Tu'][j]['nList']:
-                precomp[i]['Tu'][j]['PautoSUM'] += xSeqs[n]['VsmGP'][:, :, i] \
-                    + np.outer(xSeqs[n]['latent_variable'][i, :],
-                               xSeqs[n]['latent_variable'][i, :])
+                precomp[i]['Tu'][j]['PautoSUM'] += Seqs[n]['VsmGP'][:, :, i] \
+                    + np.outer(Seqs[n]['latent_variable'][i, :],
+                               Seqs[n]['latent_variable'][i, :])
     return precomp
 
 
@@ -357,7 +358,7 @@ def grad_betgam(p, pre_comp, const):
     p : float
         variable with respect to which optimization is performed,
         where :math:`p = log(1 / timescale^2)`
-    pre_comp : np.recarray
+    pre_comp : numpy.recarray
         structure containing precomputations
     const : dict
         contains hyperparameters
@@ -369,8 +370,7 @@ def grad_betgam(p, pre_comp, const):
     df : float
         gradient at p
     """
-    Tall = pre_comp['Tall']
-    Tmax = Tall.max()
+    Tmax = pre_comp['Tmax']
 
     # temp is Tmax x Tmax
     temp = (1 - const['eps']) * np.exp(-np.exp(p) / 2 * pre_comp['difSq'])
@@ -415,70 +415,70 @@ def grad_betgam(p, pre_comp, const):
     return f, df
 
 
-def orthonormalize(x, l_mat):
+def orthonormalize(Z, l_mat):
     """
     Orthonormalize the columns of the loading matrix and apply the
     corresponding linear transform to the latent variables.
-    In the following description, yDim and xDim refer to data dimensionality
+    In the following description, z_dim and x_dim refer to data dimensionality
     and latent dimensionality, respectively.
 
     Parameters
     ----------
-    x :  (yDim, T) np.ndarray
+    Z :  (z_dim, T) numpy.ndarray
         Latent variables
-    l_mat :  (xDim, yDim) np.ndarray
+    l_mat :  (x_dim, z_dim) numpy.ndarray
         Loading matrix
 
     Returns
     -------
-    latent_variable_orth : (xDim, T) np.ndarray
+    latent_variable_orth : (x_dim, T) numpy.ndarray
         Orthonormalized latent variables
-    Lorth : (yDim, xDim) np.ndarray
+    Lorth : (z_dim, x_dim) numpy.ndarray
         Orthonormalized loading matrix
-    TT :  (xDim, xDim) np.ndarray
+    TT :  (x_dim, x_dim) numpy.ndarray
        Linear transform applied to latent variables
     """
-    yDim = l_mat.shape[1]
-    if yDim == 1:
+    z_dim = l_mat.shape[1]
+    if z_dim == 1:
         TT = np.sqrt(np.dot(l_mat.T, l_mat))
         Lorth = rdiv(l_mat, TT)
-        latent_variable_orth = np.dot(TT, x)
+        latent_variable_orth = np.dot(TT, Z)
     else:
         UU, DD, VV = sp.linalg.svd(l_mat, full_matrices=False)
         # TT is transform matrix
         TT = np.dot(np.diag(DD), VV)
 
         Lorth = UU
-        latent_variable_orth = np.dot(TT, x)
+        latent_variable_orth = np.dot(TT, Z)
     return latent_variable_orth, Lorth, TT
 
 
-def segment_by_trial(seqs, x, fn):
+def segment_by_trial(seqs, Z, fn):
     """
     Segment and store data by trial.
 
     Parameters
     ----------
-    seqs : np.recarray
-        Data structure that has field x, the observations
-    x : np.ndarray
-        Data to be segmented (any dimensionality x total number of timesteps)
+    seqs : numpy.recarray
+        Data structure that has field Z, the observations
+    Z : numpy.ndarray
+        Data to be segmented (any dimensionality Z total number of timesteps)
     fn : str
         New field name of seq where segments of X are stored
 
     Returns
     -------
-    seqs_new : np.recarray
+    seqs_new : numpy.recarray
         Data structure with new field `fn`
 
     Raises
     ------
     ValueError
-        If "`All timespets` != x.shape[1]".
+        If "`All timespets` != Z.shape[1]".
 
     """
-    t_all = [t.shape[1] for t in seqs['x']]
-    if np.sum(t_all) != x.shape[1]:
+    T_all = [X_n.shape[1] for X_n in seqs['X']]
+    if np.sum(T_all) != Z.shape[1]:
         raise ValueError('size of X incorrect.')
 
     dtype_new = [(i, seqs[i].dtype) for i in seqs.dtype.names]
@@ -488,8 +488,8 @@ def segment_by_trial(seqs, x, fn):
         seqs_new[dtype_name] = seqs[dtype_name]
 
     ctr = 0
-    for n, T in enumerate(t_all):
-        seqs_new[n][fn] = x[:, ctr:ctr + T]
-        ctr += T
+    for n, T_n in enumerate(T_all):
+        seqs_new[n][fn] = Z[:, ctr:ctr + T_n]
+        ctr += T_n
 
     return seqs_new

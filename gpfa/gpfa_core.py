@@ -20,7 +20,7 @@ from tqdm import trange
 from . import gpfa_util
 
 
-def fit(X, y_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
+def fit(X, z_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
         em_max_iters=500, tau_init=0.1, eps_init=1.0E-3, freq_ll=5,
         verbose=False):
     """
@@ -28,12 +28,13 @@ def fit(X, y_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
 
     Parameters
     ----------
-    X   : numpy.ndarray
-        training data structure containing np.ndarrays whose n-th
-        element (corresponding to the n-th experimental trial) has
-        shape of (#units, #bins)
-    y_dim : int, optional
-        state dimensionality
+    X   : a list of observation sequences (in a matrix) per trial.
+        Each element in `X` is a matrix of size `x_dim` x `bins`,
+        containing an observation sequence (not spikes or spike count)
+        within each trial. The input dimensionality `x_dim` needs to
+        be the same across all elements in `X`, but bins can differ.
+    z_dim : int, optional
+        latent state dimensionality
         Default: 3
     bin_size : float, optional
         spike bin width in sec
@@ -71,16 +72,16 @@ def fit(X, y_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
         When the GPFA method is used, following parameters are contained
             covType: {'rbf', 'tri', 'logexp'}
                 type of GP covariance
-            gamma: np.ndarray of shape (1, #latent_vars)
+            gamma: numpy.ndarray of shape (1, #z_dim)
                 related to GP timescales by 'bin_size / sqrt(gamma)'
-            eps: np.ndarray of shape (1, #latent_vars)
+            eps: numpy.ndarray of shape (1, #z_dim)
                 GP noise variances
-            d: np.ndarray of shape (#units, 1)
+            d: numpy.ndarray of shape (#x_dim, 1)
                 observation mean
-            C: np.ndarray of shape (#units, #latent_vars)
+            C: numpy.ndarray of shape (#x_dim, #z_dim)
                 mapping between the observed data space and the latent variable
                 space
-            R: np.ndarray of shape (#units, #latent_vars)
+            R: numpy.ndarray of shape (#x_dim, #z_dim)
                 observation noise covariance
 
     fit_info : dict
@@ -89,11 +90,11 @@ def fit(X, y_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
             containing the runtime for each iteration step in the EM algorithm.
     """
     # For compute efficiency, train on equal-length segments of trials
-    x_train_cut = gpfa_util.cut_trials(X)
-    if len(x_train_cut) == 0:
+    X_train_cut = gpfa_util.cut_trials(X)
+    if len(X_train_cut) == 0:
         warnings.warn('No segments extracted for training. Defaulting to '
                       'segLength=Inf.')
-        x_train_cut = gpfa_util.cut_trials(X, seg_length=np.inf)
+        X_train_cut = gpfa_util.cut_trials(X, seg_length=np.inf)
 
     # ==================================
     # Initialize state model parameters
@@ -102,20 +103,20 @@ def fit(X, y_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
     params_init['covType'] = 'rbf'
     # GP timescale
     # Assume binWidth is the time step size.
-    params_init['gamma'] = (bin_size / tau_init) ** 2 * np.ones(y_dim)
+    params_init['gamma'] = (bin_size / tau_init) ** 2 * np.ones(z_dim)
     # GP noise variance
-    params_init['eps'] = eps_init * np.ones(y_dim)
+    params_init['eps'] = eps_init * np.ones(z_dim)
 
     # ========================================
     # Initialize observation model parameters
     # ========================================
     print('Initializing parameters using factor analysis...')
 
-    x_all = np.hstack(x_train_cut)
-    fa = FactorAnalysis(n_components=y_dim, copy=True,
-                        noise_variance_init=np.diag(np.cov(x_all, bias=True)))
-    fa.fit(x_all.T)
-    params_init['d'] = x_all.mean(axis=1)
+    X_all = np.hstack(X_train_cut)
+    fa = FactorAnalysis(n_components=z_dim, copy=True,
+                        noise_variance_init=np.diag(np.cov(X_all, bias=True)))
+    fa.fit(X_all.T)
+    params_init['d'] = X_all.mean(axis=1)
     params_init['C'] = fa.components_.T
     params_init['R'] = np.diag(fa.noise_variance_)
 
@@ -131,8 +132,8 @@ def fit(X, y_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
     # =====================
     print('\nFitting GPFA model...')
 
-    params_est, x_train_cut, ll_cut, iter_time = e_m(
-        params_init, x_train_cut, min_var_frac=min_var_frac,
+    params_est, X_train_cut, ll_cut, iter_time = em(
+        params_init, X_train_cut, min_var_frac=min_var_frac,
         max_iters=em_max_iters, tol=em_tol, freq_ll=freq_ll, verbose=verbose)
 
     fit_info = {'iteration_time': iter_time, 'log_likelihoods': ll_cut}
@@ -140,7 +141,7 @@ def fit(X, y_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
     return params_est, fit_info
 
 
-def e_m(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
+def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
         freq_ll=5, verbose=False):
     """
     Fits GPFA model parameters using expectation-maximization (EM) algorithm.
@@ -151,22 +152,23 @@ def e_m(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
         GPFA model parameters at which EM algorithm is initialized
         covType : {'rbf', 'tri', 'logexp'}
             type of GP covariance
-        gamma : np.ndarray of shape (1, #latent_vars)
+        gamma : numpy.ndarray of shape (1, #z_dim)
             related to GP timescales by
             'bin_size / sqrt(gamma)'
-        eps : np.ndarray of shape (1, #latent_vars)
+        eps : numpy.ndarray of shape (1, #z_dim)
             GP noise variances
-        d : np.ndarray of shape (#units, 1)
+        d : numpy.ndarray of shape (#x_dim, 1)
             observation mean
-        C : np.ndarray of shape (#units, #latent_vars)
+        C : numpy.ndarray of shape (#x_dim, #z_dim)
             mapping between the observation data space and the
             latent variable space
-        R : np.ndarray of shape (#units, #latent_vars)
+        R : numpy.ndarray of shape (#x_dim, #z_dim)
             observation noise covariance
     X : numpy.ndarray
-        training data structure containing np.ndarrays whose n-th
-        element (corresponding to the n-th experimental trial) has
-        shape of (#units, #bins)
+        data structure containing numpy.ndarrays whose n-th element
+        (corresponding to the n-th segment) has shape of
+        (#x_dim x #seg_length) where seg_length is length of segments
+        to extract and is same across all x_dims.
     max_iters : int, optional
         number of EM iterations to run
         Default: 500
@@ -193,15 +195,15 @@ def e_m(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
     params_est : dict
         GPFA model parameter estimates, returned by EM algorithm (same
         format as params_init)
-    seqs_latent : np.recarray
+    seqs_latent : numpy.recarray
         a copy of the training data structure, augmented with the new
         fields:
-        latent_variable : np.ndarray of shape (#latent_vars x #bins)
+        latent_variable : numpy.ndarray of shape (#z_dim x #bins)
             posterior mean of latent variables at each time bin
-        Vsm : np.ndarray of shape (#latent_vars, #latent_vars, #bins)
+        Vsm : numpy.ndarray of shape (#z_dim, #z_dim, #bins)
             posterior covariance between latent variables at each
             timepoint
-        VsmGP : np.ndarray of shape (#bins, #bins, #latent_vars)
+        VsmGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
             posterior covariance over time for each latent
             variable
     ll : list
@@ -210,8 +212,8 @@ def e_m(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
         lisf of computation times (in seconds) for each EM iteration
     """
     params = params_init
-    t = np.array([t.shape[1] for t in X])
-    _, y_dim = params['C'].shape
+    T = np.array([X_n.shape[1] for X_n in X])
+    _, z_dim = params['C'].shape
     lls = []
     ll_old = ll_base = ll = 0.0
     iter_time = []
@@ -229,52 +231,51 @@ def e_m(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
         # ==== E STEP =====
         if not np.isnan(ll):
             ll_old = ll
-        seqs_latent, ll = exact_inference_with_ll(X, params,
-                                                  get_ll=get_ll)
+        seqs_latent, ll = infer_latents(X, params, get_ll=get_ll)
         lls.append(ll)
 
         # ==== M STEP ====
-        sum_p_auto = np.zeros((y_dim, y_dim))
+        sum_p_auto = np.zeros((z_dim, z_dim))
         for seq_latent in seqs_latent:
             sum_p_auto += seq_latent['Vsm'].sum(axis=2) \
                 + seq_latent['latent_variable'].dot(
                 seq_latent['latent_variable'].T)
-        x = np.hstack(X)
-        latent_variable = np.hstack(seqs_latent['latent_variable'])
-        sum_xytrans = x.dot(latent_variable.T)
-        sum_yall = latent_variable.sum(axis=1)[:, np.newaxis]
-        sum_xall = x.sum(axis=1)[:, np.newaxis]
+        X_all = np.hstack(X)
+        Z_all = np.hstack(seqs_latent['latent_variable'])
+        sum_XZtrans = X_all.dot(Z_all.T)
+        sum_Zall = Z_all.sum(axis=1)[:, np.newaxis]
+        sum_Xall = X_all.sum(axis=1)[:, np.newaxis]
 
-        # term is (xDim+1) x (xDim+1)
-        term = np.vstack([np.hstack([sum_p_auto, sum_yall]),
-                          np.hstack([sum_yall.T, t.sum().reshape((1, 1))])])
-        # yDim x (xDim+1)
-        cd = gpfa_util.rdiv(np.hstack([sum_xytrans, sum_xall]), term)
+        # term is (x_dim+1) x (x_dim+1)
+        term = np.vstack([np.hstack([sum_p_auto, sum_Zall]),
+                          np.hstack([sum_Zall.T, T.sum().reshape((1, 1))])])
+        # z_dim x (x_dim+1)
+        cd = gpfa_util.rdiv(np.hstack([sum_XZtrans, sum_Xall]), term)
 
-        params['C'] = cd[:, :y_dim]
+        params['C'] = cd[:, :z_dim]
         params['d'] = cd[:, -1]
 
         # yCent must be based on the new d
         # yCent = bsxfun(@minus, [seq.y], currentParams.d);
-        # R = (yCent * yCent' - (yCent * [seq.latent_variable]') * \
+        # R = (yCent * yCent' - (yCent * [seq.Z_all]') * \
         #     currentParams.C') / sum(T);
         c = params['C']
         d = params['d'][:, np.newaxis]
         if params['notes']['RforceDiagonal']:
-            sum_xxtrans = (x * x).sum(axis=1)[:, np.newaxis]
-            xd = sum_xall * d
-            term = ((sum_xytrans - d.dot(sum_yall.T)) * c).sum(axis=1)
+            sum_xxtrans = (X_all * X_all).sum(axis=1)[:, np.newaxis]
+            xd = sum_Xall * d
+            term = ((sum_XZtrans - d.dot(sum_Zall.T)) * c).sum(axis=1)
             term = term[:, np.newaxis]
-            r = d ** 2 + (sum_xxtrans - 2 * xd - term) / t.sum()
+            r = d ** 2 + (sum_xxtrans - 2 * xd - term) / T.sum()
 
             # Set minimum private variance
             r = np.maximum(var_floor, r)
             params['R'] = np.diag(r[:, 0])
         else:
-            sum_xxtrans = x.dot(x.T)
-            xd = sum_xall.dot(d.T)
-            term = (sum_xytrans - d.dot(sum_yall.T)).dot(c.T)
-            r = d.dot(d.T) + (sum_xxtrans - xd - xd.T - term) / t.sum()
+            sum_xxtrans = X_all.dot(X_all.T)
+            xd = sum_Xall.dot(d.T)
+            term = (sum_XZtrans - d.dot(sum_Zall.T)).dot(c.T)
+            r = d.dot(d.T) + (sum_xxtrans - xd - xd.T - term) / T.sum()
 
             params['R'] = (r + r.T) / 2  # ensure symmetry
 
@@ -305,62 +306,62 @@ def e_m(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
     return params, seqs_latent, lls, iter_time
 
 
-def exact_inference_with_ll(seqs_in, params, get_ll=True):
+def infer_latents(X, params, get_ll=True):
     """
     Extracts latent trajectories from observed data
     given GPFA model parameters.
 
     Parameters
     ----------
-    seqs : np.recarray
+    X : numpy.ndarray
         input data structure, whose n-th element (corresponding to the n-th
-        experimental trial) of shape (#units, #bins)
+        experimental trial) of shape (#x_dim, #bins)
     params : dict
         GPFA model parameters whe the following fields:
-        C : np.ndarray
+        C : numpy.ndarray
             FA factor loadings matrix
-        d : np.ndarray
+        d : numpy.ndarray
             FA mean vector
-        R : np.ndarray
+        R : numpy.ndarray
             FA noise covariance matrix
-        gamma : np.ndarray
+        gamma : numpy.ndarray
             GP timescale
-        eps : np.ndarray
+        eps : numpy.ndarray
             GP noise variance
     get_ll : bool, optional
           specifies whether to compute data log likelihood (default: True)
 
     Returns
     -------
-    seqs_latent : np.recarray
-        seqs : np.recarray
+    seqs_latent : numpy.recarray
+        X_out : numpy.ndarray
             input data structure, whose n-th element (corresponding to the n-th
             experimental trial) has fields:
-            x : np.ndarray of shape (#units, #bins)
-        latent_variable :  (#latent_vars, #bins) np.ndarray
+            X : numpy.ndarray of shape (#x_dim, #bins)
+        latent_variable :  (#z_dim, #bins) numpy.ndarray
               posterior mean of latent variables at each time bin
-        Vsm :  (#latent_vars, #latent_vars, #bins) np.ndarray
+        Vsm :  (#z_dim, #z_dim, #bins) numpy.ndarray
               posterior covariance between latent variables at each
               timepoint
-        VsmGP :  (#bins, #bins, #latent_vars) np.ndarray
+        VsmGP :  (#bins, #bins, #z_dim) numpy.ndarray
                 posterior covariance over time for each latent
                 variable
     ll : float
-        data log likelihood, np.nan is returned when `get_ll` is set False
+        data log likelihood, numpy.nan is returned when `get_ll` is set False
     """
-    x_dim, y_dim = params['C'].shape
+    x_dim, z_dim = params['C'].shape
 
     # copy the contents of the input data structure to output structure
-    seqs = np.empty(len(seqs_in), dtype=[('x', object)])
-    for s, seq in enumerate(seqs):
-        seq['x'] = seqs_in[s]
+    X_out = np.empty(len(X), dtype=[('X', object)])
+    for s, seq in enumerate(X_out):
+        seq['X'] = X[s]
 
-    dtype_out = [(x, seqs[x].dtype) for x in seqs.dtype.names]
+    dtype_out = [(i, X_out[i].dtype) for i in X_out.dtype.names]
     dtype_out.extend([('latent_variable', object), ('Vsm', object),
                       ('VsmGP', object)])
-    seqs_latent = np.empty(len(seqs), dtype=dtype_out)
-    for dtype_name in seqs.dtype.names:
-        seqs_latent[dtype_name] = seqs[dtype_name]
+    seqs_latent = np.empty(len(X_out), dtype=dtype_out)
+    for dtype_name in X_out.dtype.names:
+        seqs_latent[dtype_name] = X_out[dtype_name]
 
     # Precomputations
     if params['notes']['RforceDiagonal']:
@@ -374,7 +375,7 @@ def exact_inference_with_ll(seqs_in, params, get_ll=True):
     c_rinv = params['C'].T.dot(rinv)
     c_rinv_c = c_rinv.dot(params['C'])
 
-    t_all = [seqs[i][0].shape[1] for i in range(len(seqs))]
+    t_all = [X_n.shape[1] for X_n in X]
     t_uniq = np.unique(t_all)
     ll = 0.
 
@@ -387,47 +388,47 @@ def exact_inference_with_ll(seqs_in, params, get_ll=True):
         k_big = sparse.csr_matrix(k_big)
 
         blah = [c_rinv_c for _ in range(t)]
-        c_rinv_c_big = linalg.block_diag(*blah)  # (xDim*T) x (xDim*T)
-        minv, logdet_m = gpfa_util.inv_persymm(k_big_inv + c_rinv_c_big, y_dim)
+        c_rinv_c_big = linalg.block_diag(*blah)  # (x_dim*T) x (x_dim*T)
+        minv, logdet_m = gpfa_util.inv_persymm(k_big_inv + c_rinv_c_big, z_dim)
 
         # Note that posterior covariance does not depend on observations,
         # so can compute once for all trials with same T.
-        # xDim x xDim posterior covariance for each timepoint
-        vsm = np.full((y_dim, y_dim, t), np.nan)
-        idx = np.arange(0, y_dim * t + 1, y_dim)
+        # x_dim x x_dim posterior covariance for each timepoint
+        vsm = np.full((z_dim, z_dim, t), np.nan)
+        idx = np.arange(0, z_dim * t + 1, z_dim)
         for i in range(t):
             vsm[:, :, i] = minv[idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
 
         # T x T posterior covariance for each GP
-        vsm_gp = np.full((t, t, y_dim), np.nan)
-        for i in range(y_dim):
-            vsm_gp[:, :, i] = minv[i::y_dim, i::y_dim]
+        vsm_gp = np.full((t, t, z_dim), np.nan)
+        for i in range(z_dim):
+            vsm_gp[:, :, i] = minv[i::z_dim, i::z_dim]
 
         # Process all trials with length T
         n_list = np.where(t_all == t)[0]
-        # dif is xDim x sum(T)
-        dif = np.hstack(seqs_latent[n_list]['x']) - params['d'][:, np.newaxis]
-        # term1Mat is (yDim*T) x length(nList)
-        term1_mat = c_rinv.dot(dif).reshape((y_dim * t, -1), order='F')
+        # dif is x_dim x sum(T)
+        dif = np.hstack(seqs_latent[n_list]['X']) - params['d'][:, np.newaxis]
+        # term1Mat is (z_dim*T) x length(nList)
+        term1_mat = c_rinv.dot(dif).reshape((z_dim * t, -1), order='F')
 
         # Compute blkProd = CRinvC_big * invM efficiently
         # blkProd is block persymmetric, so just compute top half
         t_half = int(np.ceil(t / 2.0))
-        blk_prod = np.zeros((y_dim * t_half, y_dim * t))
-        idx = range(0, y_dim * t_half + 1, y_dim)
+        blk_prod = np.zeros((z_dim * t_half, z_dim * t))
+        idx = range(0, z_dim * t_half + 1, z_dim)
         for i in range(t_half):
             blk_prod[idx[i]:idx[i + 1], :] = c_rinv_c.dot(
                 minv[idx[i]:idx[i + 1], :])
-        blk_prod = k_big[:y_dim * t_half, :].dot(
-            gpfa_util.fill_persymm(np.eye(y_dim * t_half, y_dim * t) -
-                                   blk_prod, y_dim, t))
-        # latent_variableMat is (yDim*T) x length(nList)
+        blk_prod = k_big[:z_dim * t_half, :].dot(
+            gpfa_util.fill_persymm(np.eye(z_dim * t_half, z_dim * t) -
+                                   blk_prod, z_dim, t))
+        # latent_variableMat is (z_dim*T) x length(nList)
         latent_variable_mat = gpfa_util.fill_persymm(
-            blk_prod, y_dim, t).dot(term1_mat)
+            blk_prod, z_dim, t).dot(term1_mat)
 
         for i, n in enumerate(n_list):
             seqs_latent[n]['latent_variable'] = \
-                latent_variable_mat[:, i].reshape((y_dim, t), order='F')
+                latent_variable_mat[:, i].reshape((z_dim, t), order='F')
             seqs_latent[n]['Vsm'] = vsm
             seqs_latent[n]['VsmGP'] = vsm_gp
 
@@ -451,7 +452,7 @@ def learn_gp_params(seqs_latent, params, verbose=False):
 
     Parameters
     ----------
-    seqs_latent : np.recarray
+    seqs_latent : numpy.recarray
         data structure containing trajectories;
     params : dict
         current GP state model parameters, which gives starting point
@@ -461,7 +462,7 @@ def learn_gp_params(seqs_latent, params, verbose=False):
 
     Returns
     -------
-    param_opt : np.ndarray
+    param_opt : numpy.ndarray
         updated GP state model parameter
 
     Raises
@@ -480,11 +481,11 @@ def learn_gp_params(seqs_latent, params, verbose=False):
     param_init = params[param_name]
     param_opt = {param_name: np.empty_like(param_init)}
 
-    y_dim = param_init.shape[-1]
-    precomp = gpfa_util.make_precomp(seqs_latent, y_dim)
+    z_dim = param_init.shape[-1]
+    precomp = gpfa_util.make_precomp(seqs_latent, z_dim)
 
     # Loop once for each state dimension (each GP)
-    for i in range(y_dim):
+    for i in range(z_dim):
         const = {'eps': params['eps'][i]}
         initp = np.log(param_init[i])
         res_opt = optimize.minimize(gpfa_util.grad_betgam, initp,
@@ -493,7 +494,7 @@ def learn_gp_params(seqs_latent, params, verbose=False):
         param_opt['gamma'][i] = np.exp(res_opt.x)
 
         if verbose:
-            print(f'\n Converged p; yDim:{i}, p:{res_opt.x}')
+            print(f'\n Converged p; z_dim:{i}, p:{res_opt.x}')
 
     return param_opt
 
@@ -512,31 +513,31 @@ def orthonormalize(params_est, seqs):
         covType : {'rbf', 'tri', 'logexp'}
             type of GP covariance
             Currently, only 'rbf' is supported.
-        gamma : np.ndarray of shape (1, #latent_vars)
+        gamma : numpy.ndarray of shape (1, #z_dim)
             related to GP timescales by 'bin_size / sqrt(gamma)'
-        eps : np.ndarray of shape (1, #latent_vars)
+        eps : numpy.ndarray of shape (1, #z_dim)
             GP noise variances
-        d : np.ndarray of shape (#units, 1)
+        d : numpy.ndarray of shape (#x_dim, 1)
             observation mean
-        C : np.ndarray of shape (#units, #latent_vars)
+        C : numpy.ndarray of shape (#x_dim, #z_dim)
             mapping between the neuronal data space and the latent variable
             space
-        R : np.ndarray of shape (#units, #latent_vars)
+        R : numpy.ndarray of shape (#x_dim, #z_dim)
             observation noise covariance
 
-    seqs : np.recarray
+    seqs : numpy.recarray
         Contains the embedding of the training data into the latent variable
         space.
         Data structure, whose n-th entry (corresponding to the n-th
         experimental trial) has field
-        x : np.ndarray of shape (#units, #bins)
+        X : numpy.ndarray of shape (#x_dim, #bins)
           observed data
-        latent_variable : np.ndarray of shape (#latent_vars, #bins)
+        latent_variable : numpy.ndarray of shape (#z_dim, #bins)
           posterior mean of latent variables at each time bin
-        Vsm : np.ndarray of shape (#latent_vars, #latent_vars, #bins)
+        Vsm : numpy.ndarray of shape (#z_dim, #z_dim, #bins)
           posterior covariance between latent variables at each
           timepoint
-        VsmGP : np.ndarray of shape (#bins, #bins, #latent_vars)
+        VsmGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
           posterior covariance over time for each latent variable
 
     Returns
@@ -544,13 +545,13 @@ def orthonormalize(params_est, seqs):
     params_est : dict
         Estimated model parameters, including `Corth`, obtained by
         orthonormalizing the columns of C.
-    seqs : np.recarray
+    seqs : numpy.recarray
         Training data structure that contains the new field
         `latent_variable_orth`, the orthonormalized neural trajectories.
     """
     C = params_est['C']
-    Z = np.hstack(seqs['latent_variable'])
-    latent_variable_orth, Corth, _ = gpfa_util.orthonormalize(Z, C)
+    Z_all = np.hstack(seqs['latent_variable'])
+    latent_variable_orth, Corth, _ = gpfa_util.orthonormalize(Z_all, C)
     seqs = gpfa_util.segment_by_trial(
         seqs, latent_variable_orth, 'latent_variable_orth')
 
