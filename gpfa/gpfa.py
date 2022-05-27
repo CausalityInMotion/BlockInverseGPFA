@@ -1,61 +1,33 @@
 """
 Gaussian-process factor analysis (GPFA) is a dimensionality reduction method
-:cite:`gpfa-Yu2008_1881` for neural trajectory visualization of parallel spike
-trains. GPFA applies factor analysis (FA) to time-binned spike count data to
-reduce the dimensionality and at the same time smoothes the resulting
-low-dimensional trajectories by fitting a Gaussian process (GP) model to them.
+:cite:`gpfa-Yu2008_1881` for latent trajectory visualization. GPFA applies f
+actor analysis (FA) to observed data to reduce the dimensionality and at the
+same time smoothes the resulting low-dimensional trajectories by fitting a
+Gaussian process (GP) model to them.
 
-The input consists of a set of trials (Y), each containing a list of spike
-trains (N neurons). The output is the projection (X) of the data in a space
-of pre-chosen dimensionality x_dim < N.
+The input consists of a set of trials (X), each containing a list of
+observation sequences, one per trial. The output is the projection (Z) of the
+data in a space of pre-chosen dimensionality z_dim < N.
 
 Under the assumption of a linear relation (transform matrix C) between the
-latent variable X following a Gaussian process and the spike train data Y with
+latent variable Z following a Gaussian process and the observation X with
 a bias d and  a noise term of zero mean and (co)variance R (i.e.,
-:math:`Y = C X + d + Gauss(0,R)`), the projection corresponds to the
-conditional probability E[X|Y].
+:math:`X = C@Z + d + Gauss(0,R)`), the projection corresponds to the
+conditional probability E[Z|X].
 The parameters (C, d, R) as well as the time scales and variances of the
 Gaussian process are estimated from the data using an expectation-maximization
 (EM) algorithm.
-
-Internally, the analysis consists of the following steps:
-
-0) bin the spike train data to get a sequence of N dimensional vectors of spike
-counts in respective time bins, and choose the reduced dimensionality x_dim
 
 1) expectation-maximization for fitting of the parameters C, d, R and the
 time-scales and variances of the Gaussian process, using all the trials
 provided as input (c.f., `gpfa_core.em()`)
 
 2) projection of single trials in the low dimensional space (c.f.,
-`gpfa_core.exact_inference_with_ll()`)
+`gpfa_core.infer_latents()`)
 
 3) orthonormalization of the matrix C and the corresponding subspace, for
 visualization purposes: (c.f., `gpfa_core.orthonormalize()`)
 
-
-.. autosummary::
-    :toctree: _toctree/gpfa
-
-    GPFA
-
-
-Visualization
--------------
-Visualization of GPFA transforms is covered in Viziphant:
-https://viziphant.readthedocs.io/en/latest/modules.html
-
-
-Tutorial
---------
-
-:tutorial:`View tutorial <../tutorial/gpfa>`
-
-Run tutorial interactively:
-
-.. image:: https://mybinder.org/badge.svg
-   :target: https://mybinder.org/v2/gh/NeuralEnsemble/elephant/master
-            ?filepath=doc/tutorials/gpfa.ipynb
 
 
 Original code
@@ -83,7 +55,7 @@ __all__ = [
 
 class GPFA(sklearn.base.BaseEstimator):
     """
-    Apply Gaussian process factor analysis (GPFA) to spike train data
+    Apply Gaussian process factor analysis (GPFA) to observed data
 
     There are two principle scenarios of using the GPFA analysis, both of which
     can be performed in an instance of the GPFA() class.
@@ -109,11 +81,11 @@ class GPFA(sklearn.base.BaseEstimator):
 
     Parameters
     ----------
-    x_dim : int, optional
-        state dimensionality
+    z_dim : int, optional
+        latent state dimensionality
         Default: 3
     bin_size : float, optional
-        spike bin width in msec
+        observed data bin width in sec
         Default: 0.02
     min_var_frac : float, optional
         fraction of overall data variance for each observed dimension to set as
@@ -128,8 +100,8 @@ class GPFA(sklearn.base.BaseEstimator):
         number of EM iterations to run
         Default: 500
     tau_init : float, optional
-        GP timescale initialization in msec
-        Default: 100
+        GP timescale initialization in sec
+        Default: 0.1
     eps_init : float, optional
         GP noise variance initialization
         Default: 1e-3
@@ -146,7 +118,7 @@ class GPFA(sklearn.base.BaseEstimator):
     valid_data_names : tuple of str
         Names of the data contained in the resultant data structure, used to
         check the validity of users' request
-    has_spikes_bool : np.ndarray of bool
+    has_spikes_bool : numpy.ndarray of bool
         Indicates if a neuron has any spikes across trials of the training
         data.
     params_estimated : dict
@@ -155,17 +127,17 @@ class GPFA(sklearn.base.BaseEstimator):
         covType : str
             type of GP covariance, either 'rbf', 'tri', or 'logexp'.
             Currently, only 'rbf' is supported.
-        gamma : (1, #latent_vars) np.ndarray
+        gamma : (1, #z_dim) numpy.ndarray
             related to GP timescales of latent variables before
             orthonormalization by :math:`bin_size / sqrt(gamma)`
-        eps : (1, #latent_vars) np.ndarray
+        eps : (1, #z_dim) numpy.ndarray
             GP noise variances
-        d : (#units, 1) np.ndarray
+        d : (#x_dim, 1) numpy.ndarray
             observation mean
-        C : (#units, #latent_vars) np.ndarray
-            loading matrix, representing the mapping between the neuronal data
+        C : (#x_dim, #z_dim) numpy.ndarray
+            loading matrix, representing the mapping between the observed data
             space and the latent variable space
-        R : (#units, #latent_vars) np.ndarray
+        R : (#x_dim, #z_dim) numpy.ndarray
             observation noise covariance
     fit_info : dict
         Information of the fitting process. Updated at each run of the fit()
@@ -183,8 +155,8 @@ class GPFA(sklearn.base.BaseEstimator):
             maximized likelihood of the transformed data
         num_bins : nd.array
             number of bins in each trial
-        Corth : (#units, #latent_vars) np.ndarray
-            mapping between the neuronal data space and the orthonormal
+        Corth : (#x_dim, #z_dim) numpy.ndarray
+            mapping between the observed data space and the orthonormal
             latent variable space
 
     Methods
@@ -202,20 +174,23 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> import numpy as np
     >>> from gpfa import GPFA, gpfa_util
 
-    >>> # get random parameters
-    >>> np.random.seed(8)
+    >>> # set random parameters
+    >>> seed = [0, 8, 10]
     >>> bin_size = 0.02                             # [s]
     >>> sigma_f = 1.0
     >>> sigma_n = 1e-8
     >>> tau_f = 0.7
-    >>> N = 10                                      # number of neurons
-    >>> x_dims = 3                                  # number of latent state
-    >>> C = np.random.uniform(0, 2, (N, x_dims))    # loading matrix
-    >>> obs_noise = np.random.uniform(0.2, 0.75, N) # noise parameters
+    >>> num_trials = 3                              # number of trials
+    >>> N = 10                                      # number of units
+    >>> z_dim = 3                                   # number of latent state
+
 
     >>> # get some finte number of points
     >>> t = np.arange(0, 10, 0.01).reshape(-1,1)  # time series
-    >>> timesteps = t.shape[0]                    # number of time points
+    >>> timesteps = len(t)                        # number of time points
+
+    >>> C = np.random.uniform(0, 2, (N, z_dim))     # loading matrix
+    >>> obs_noise = np.random.uniform(0.2, 0.75, N) # rand noise parameters
 
     >>> # mean
     >>> mu = np.zeros(t.shape)
@@ -223,36 +198,38 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> # exponential kernel from Yu et al.
     >>> sqdist = (t - t.T)**2
     >>> cov = sigma_f**2 * np.exp(-0.5 / tau_f**2 * sqdist)
-    ...                            + sigma_n**2 * np.eye(timesteps)
+    ...                         + sigma_n**2 * np.eye(timesteps)
 
-    >>> # Draw three latent state samples from a Gaussian process
-    >>> # using the above cov
-    >>> x = np.random.multivariate_normal(mu.ravel(), cov, x_dims)
+    >>> X = []
+    >>> for n in range(num_trials):
+    >>>     np.random.seed(seed[n])
 
-    >>> # observations have Gaussian noise
-    >>> Y = C@x + np.random.normal(0, obs_noise, (timesteps, N)).T
+    >>>     # Draw three latent state samples from a Gaussian process
+    >>>     # using the above cov
+    >>>     Z = np.random.multivariate_normal(mu.ravel(), cov, z_dim)
 
-    >>> # get data into the right format
-    >>> data = np.array([(Y.shape[1], Y)], dtype=[('T', int), ('y', 'O')])
-    >>> gpfa = GPFA(bin_size=bin_size, x_dim=2)
-    >>> gpfa.fit(data)
-    >>> results = gpfa.transform(data, returned_data=['latent_variable_orth',
-    ...                                               'latent_variable'])
-    >>> latent_variable_orth = results['latent_variable_orth']
-    >>> latent_variable = results['latent_variable']
+    >>>     # observations have Gaussian noise
+    >>>     x = C@Z + np.random.normal(0, obs_noise, (timesteps, N)).T
+    >>>     X.append(x)
+
+    >>> gpfa = GPFA(bin_size=bin_size, z_dim=2)
+    >>> gpfa.fit(X)
+    >>> results = gpfa.transform(data, returned_data=['pZ_mu_orth',
+    ...                                               'pZ_mu'])
+    >>> pZ_mu_orth = results['pZ_mu_orth']
+    >>> pZ_mu = results['pZ_mu']
 
     or simply
 
-    >>> results = GPFA(bin_size=bin_size, x_dim=x_dims).fit_transform(data,
-    ...                returned_data=['latent_variable_orth',
-    ...                               'latent_variable'])
+    >>> results = GPFA(bin_size=bin_size, z_dim=z_dim).fit_transform(X,
+    ...                returned_data=['pZ_mu_orth', 'pZ_mu'])
     """
 
-    def __init__(self, bin_size=0.02, x_dim=3, min_var_frac=0.01,
+    def __init__(self, bin_size=0.02, z_dim=3, min_var_frac=0.01,
                  tau_init=0.1, eps_init=1.0E-3, em_tol=1.0E-8,
                  em_max_iters=500, freq_ll=5, verbose=False):
         self.bin_size = bin_size
-        self.x_dim = x_dim
+        self.z_dim = z_dim
         self.min_var_frac = min_var_frac
         self.tau_init = tau_init
         self.eps_init = eps_init
@@ -260,11 +237,11 @@ class GPFA(sklearn.base.BaseEstimator):
         self.em_max_iters = em_max_iters
         self.freq_ll = freq_ll
         self.valid_data_names = (
-            'latent_variable_orth',
-            'latent_variable',
-            'Vsm',
-            'VsmGP',
-            'y')
+            'pZ_mu_orth',
+            'pZ_mu',
+            'pZ_cov',
+            'pZ_covGP',
+            'X')
         self.has_spikes_bool = None
         self.verbose = verbose
 
@@ -273,17 +250,17 @@ class GPFA(sklearn.base.BaseEstimator):
         self.fit_info = {}
         self.transform_info = {}
 
-    def fit(self, spiketrains):
+    def fit(self, X):
         """
         Fit the model with the given training data.
 
         Parameters
         ----------
-        spiketrains : a list of binned spiketrains arrays per trial
-            Spike train data to be fit to latent variables.
-            The outer list corresponds to trials and the inner list corresponds
-            to the neurons recorded in that trial, such that
-            `spiketrains[l][n]` is the spike train of neuron `n` in trial `l`.
+        X   : a list of observation sequences, one per trial.
+            Each element in X is a matrix of size #x_dim x #bins,
+            containing an observation sequence. The input dimensionality
+            #x_dim needs to be the same across elements in X, but #bins
+            can be different for each observation sequence.
 
         Returns
         -------
@@ -294,30 +271,29 @@ class GPFA(sklearn.base.BaseEstimator):
         ------
         ValueError
 
-            If covariance matrix of input spike data is rank deficient.
+            If covariance matrix of input data is rank deficient.
         """
-        # self._check_training_data(spiketrains)
-        seqs_train = self._format_training_data(spiketrains)
+        # Get the dimension of training data
+        self.has_spikes_bool = np.hstack(X).any(axis=1)
         # Check if training data covariance is full rank
-        y_all = np.hstack(seqs_train['y'])
-        y_dim = y_all.shape[0]
+        X_all = np.hstack(X)
+        x_dim = X_all.shape[0]
 
-        if np.linalg.matrix_rank(np.cov(y_all)) < y_dim:
+        if np.linalg.matrix_rank(np.cov(X_all)) < x_dim:
             errmesg = 'Observation covariance matrix is rank deficient.\n' \
                       'Possible causes: ' \
                       'repeated units, not enough observations.'
             raise ValueError(errmesg)
 
         if self.verbose:
-            print('Number of training trials: {}'.format(len(seqs_train)))
-            print('Latent space dimensionality: {}'.format(self.x_dim))
-            print('Observation dimensionality: {}'.format(
-                self.has_spikes_bool.sum()))
+            print(f'Number of training trials: {len(X)}')
+            print(f'Latent space dimensionality: {self.z_dim}')
+            print(f'Observation dimensionality: {self.has_spikes_bool.sum()}')
 
         # The following does the heavy lifting.
         self.params_estimated, self.fit_info = gpfa_core.fit(
-            seqs_train=seqs_train,
-            x_dim=self.x_dim,
+            X=X,
+            z_dim=self.z_dim,
             bin_size=self.bin_size,
             min_var_frac=self.min_var_frac,
             em_max_iters=self.em_max_iters,
@@ -329,15 +305,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return self
 
-    def _format_training_data(self, spiketrains):
-        seqs = spiketrains
-        # Remove inactive units based on training set
-        self.has_spikes_bool = np.hstack(seqs['y']).any(axis=1)
-        for seq in seqs:
-            seq['y'] = seq['y'][self.has_spikes_bool, :]
-        return seqs
-
-    def transform(self, spiketrains, returned_data=['latent_variable_orth']):
+    def transform(self, X, returned_data=['pZ_mu_orth']):
         """
         Obtain trajectories of neural activity in a low-dimensional latent
         variable space by inferring the posterior mean of the obtained GPFA
@@ -345,83 +313,98 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        spiketrains : a list of binned spiketrains arrays per trial
-            Spike train data to be fit to latent variables.
-            The outer list corresponds to trials and the inner list corresponds
-            to the neurons recorded in that trial, such that
-            `spiketrains[l][n]` is the spike train of neuron `n` in trial `l`.
+        X   : a list of observation sequences, one per trial.
+            Each element in X is a matrix of size #x_dim x #bins,
+            containing an observation sequence. The input dimensionality
+            #x_dim needs to be the same across elements in X, but #bins
+            can be different for each observation sequence.
 
         returned_data : list of str
+            Set `returned_data` to a list of str of desired resultant data e.g:
+            `returned_data = ['pZ_mu_orth']`
             The dimensionality reduction transform generates the following
             resultant data:
 
-               'latent_variable_orth': orthonormalized posterior mean of latent
+               'pZ_mu_orth': orthonormalized posterior mean of latent
                variable
 
-               'latent_variable': posterior mean of latent variable before
+               'pZ_mu': posterior mean of latent variable before
                orthonormalization
 
-               'Vsm': posterior covariance between latent variables
+               'pZ_cov': posterior covariance between latent variables
 
-               'VsmGP': posterior covariance over time for each latent variable
+               'pZ_covGP': posterior covariance over time for each latent 
+                variable
 
-               'y': neural data used to estimate the GPFA model parameters
+               'X': observed data used to estimate the GPFA model parameters
 
             `returned_data` specifies the keys by which the data dict is
             returned.
 
-            Default is ['latent_variable_orth'].
+            Default is ['pZ_mu_orth'].
 
         Returns
         -------
-        np.ndarray or dict
-            When the length of `returned_data` is one, a single np.ndarray,
-            containing the requested data (the first entry in `returned_data`
-            keys list), is returned. Otherwise, a dict of multiple np.ndarrays
-            with the keys identical to the data names in `returned_data` is
-            returned.
+        numpy.ndarray or dict
+            When the length of `returned_data` is one, a single numpy.ndarray,
+            containing the requested data (the first entry in `returned_data` 
+            keys list), is returned. Otherwise, a dict of multiple
+            numpy.ndarrays with the keys identical to the data names in
+            `returned_data` is returned.
 
-            N-th entry of each np.ndarray is a np.ndarray of the following
-            shape, specific to each data type, containing the corresponding
-            data for the n-th trial:
+            N-th entry of each numpy.ndarray is a numpy.ndarray of the
+            following shape, specific to each data type, containing the
+            corresponding data for the n-th trial:
 
-                `latent_variable_orth`: (#latent_vars, #bins) np.ndarray
+                `pZ_mu_orth`: (#z_dim, #bins) numpy.ndarray
 
-                `latent_variable`:  (#latent_vars, #bins) np.ndarray
+                `pZ_mu`:  (#z_dim, #bins) numpy.ndarray
 
-                `y`:  (#units, #bins) np.ndarray
+                `X`:  (#x_dim, #bins) numpy.ndarray
 
-                `Vsm`:  (#latent_vars, #latent_vars, #bins) np.ndarray
+                `pZ_cov`:  (#z_dim, #z_dim, #bins) numpy.ndarray
 
-                `VsmGP`:  (#bins, #bins, #latent_vars) np.ndarray
+                `pZ_covGP`:  (#bins, #bins, #z_dim) numpy.ndarray
 
             Note that the num. of bins (#bins) can vary across trials,
-            reflecting the trial durations in the given `spiketrains` data.
+            reflecting the trial durations in the given `observed` data.
+
+        Raises
+        ------
+        ValueError
+            If the number of units in `observations` is different from that
+            in the training data.
+
+            If `returned_data` contains keys different from the ones in
+            `self.valid_data_names`.
         """
 
-        seqs = spiketrains
-        for seq in seqs:
-            seq['y'] = seq['y'][self.has_spikes_bool, :]
-        seqs, ll = gpfa_core.exact_inference_with_ll(seqs,
-                                                     self.params_estimated,
-                                                     get_ll=True)
+        if X[0].shape[0] != len(self.has_spikes_bool):
+            raise ValueError("'observed data' must contain the same number of "
+                             "units as the training data")
+        invalid_keys = set(returned_data).difference(self.valid_data_names)
+        if len(invalid_keys) > 0:
+            raise ValueError("'returned_data' can only have the following "
+                             f"entries: {self.valid_data_names}")
+
+        seqs, ll = gpfa_core.infer_latents(X, self.params_estimated, 
+                                           get_ll=True)
         self.transform_info['log_likelihood'] = ll
-        self.transform_info['num_bins'] = seqs['T']
+        self.transform_info['num_bins'] = [nb.shape[1] for nb in seqs['X']]
         Corth, seqs = gpfa_core.orthonormalize(self.params_estimated, seqs)
         self.transform_info['Corth'] = Corth
         if len(returned_data) == 1:
             return seqs[returned_data[0]]
-        return {x: seqs[x] for x in returned_data}
+        return {i: seqs[i] for i in returned_data}
 
-    def fit_transform(self, spiketrains, returned_data=[
-                      'latent_variable_orth']):
+    def fit_transform(self, X, returned_data=['pZ_mu_orth']):
         """
-        Fit the model with `spiketrains` data and apply the dimensionality
-        reduction on `spiketrains`.
+        Fit the model with `observed` data and apply the dimensionality
+        reduction on the `observations`.
 
         Parameters
         ----------
-        spiketrains : a list of binned spiketrains arrays per trial
+        X   : list of observed data arrays per trial
             Refer to the :func:`GPFA.fit` docstring.
 
         returned_data : list of str
@@ -429,7 +412,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Returns
         -------
-        np.ndarray or dict
+        numpy.ndarray or dict
             Refer to the :func:`GPFA.transform` docstring.
 
         Raises
@@ -439,29 +422,29 @@ class GPFA(sklearn.base.BaseEstimator):
 
         See Also
         --------
-        GPFA.fit : fit the model with `spiketrains`
-        GPFA.transform : transform `spiketrains` into trajectories
+        GPFA.fit : fit the model with `observation`
+        GPFA.transform : transform `observation` into trajectories
 
         """
-        self.fit(spiketrains)
-        return self.transform(spiketrains, returned_data=returned_data)
+        self.fit(X)
+        return self.transform(X, returned_data=returned_data)
 
-    def score(self, spiketrains):
+    def score(self, X):
         """
         Returns the log-likelihood of the given data under the fitted model
 
         Parameters
         ----------
-        spiketrains : a list of binned spiketrains arrays per trial
-            Spike train data to be fit to latent variables.
-            The outer list corresponds to trials and the inner list corresponds
-            to the neurons recorded in that trial, such that
-            `spiketrains[l][n]` is the spike train of neuron `n` in trial `l`.
+        X   : a list of observation sequences, one per trial. 
+            Each element in X is a matrix of size #x_dim x #bins,
+            containing an observation sequence. The input dimensionality
+            #x_dim needs to be the same across elements in X, but #bins
+            can be different for each observation sequence.
 
         Returns
         -------
         log_likelihood : float
             Log-likelihood of the given spiketrains under the fitted model.
         """
-        self.transform(spiketrains)
+        self.transform(X)
         return self.transform_info['log_likelihood']

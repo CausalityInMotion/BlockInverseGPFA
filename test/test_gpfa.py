@@ -1,6 +1,5 @@
 """
 GPFA Unittests.
-
 :copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
 :copyright: Copyright 2014-2020 by the Elephant team.
 :license: Modified BSD, see LICENSE.txt for details.
@@ -28,7 +27,7 @@ class TestGPFA(unittest.TestCase):
         self.tau_init = 0.1  # [s]
         self.eps_init = 1.0E-3
         self.n_iters = 10
-        self.x_dim = 2
+        self.z_dim = 2
         n_neurons = 2  # per rate therefore, there are 4 neurons
 
         def gen_test_data(rates_a, rates_b, durs, n_neurons,
@@ -47,10 +46,8 @@ class TestGPFA(unittest.TestCase):
                 bin_size    : bin size in [s] for analysis purpose
                 use_sqrt    : boolean
                             if true, take square root of binned spike trains
-
             Returns:
                 seqs        : a list of binned spiketrains arrays per trial
-
             """
             # get number of bins for the first epoch
             # for both rates_a and rates_b
@@ -83,16 +80,12 @@ class TestGPFA(unittest.TestCase):
                                                 [binned_spikecount,
                                                  spk_i], axis=1
                                                 )
-
-            # get number of bins
-            n_bins = binned_spikecount.shape[1]
-
             # take square root of the binned_spikeCount
             # if `use_sqrt` is True (see paper for motivation)
             if use_sqrt:
                 binned_sqrt_spkcount = np.sqrt(binned_spikecount)
 
-            seqs = [(n_bins, binned_sqrt_spkcount)]
+            seqs = [binned_sqrt_spkcount]
 
             return seqs
 
@@ -101,15 +94,12 @@ class TestGPFA(unittest.TestCase):
         durs = (2.5, 2.5, 2.5, 2.5)
 
         # covert generated data to sequence spiketrains
-        seqs = gen_test_data(rates_a, rates_b, durs,
-                             n_neurons, bin_size=self.bin_size)
-
-        # add fields to the np.array to make it a np.recarray
-        self.data = np.array(seqs, dtype=[('T', int), ('y', 'O')])
+        self.X = gen_test_data(rates_a, rates_b, durs,
+                               n_neurons, bin_size=self.bin_size)
 
         # get the number of time steps in the trails
-        self.t_all = self.data['T'][0]
-        self.t_half = int(np.ceil(self.t_all / 2.0))
+        self.T = self.X[0].shape[1]
+        self.t_half = int(np.ceil(self.T / 2.0))
 
         # Initialize state model parameters
         self.params_init = {}
@@ -117,19 +107,19 @@ class TestGPFA(unittest.TestCase):
         # GP timescale
         # Assume binWidth is the time step size.
         time_step = (self.bin_size / self.tau_init) ** 2
-        self.params_init['gamma'] = time_step * np.ones(self.x_dim)
+        self.params_init['gamma'] = time_step * np.ones(self.z_dim)
         # GP noise variance
-        self.params_init['eps'] = self.eps_init * np.ones(self.x_dim)
+        self.params_init['eps'] = self.eps_init * np.ones(self.z_dim)
 
         # Initialize observation model parameters using factor analysis
-        y_all = np.hstack(self.data['y'])
+        X_all = np.hstack(self.X)
         f_a = FactorAnalysis(
-            n_components=self.x_dim, copy=True,
-            noise_variance_init=np.diag(np.cov(y_all, bias=True))
+            n_components=self.z_dim, copy=True,
+            noise_variance_init=np.diag(np.cov(X_all, bias=True))
                             )
         # fit factor analysis
-        f_a.fit(y_all.T)
-        self.params_init['d'] = y_all.mean(axis=1)
+        f_a.fit(X_all.T)
+        self.params_init['d'] = X_all.mean(axis=1)
         self.params_init['C'] = f_a.components_.T
         self.params_init['R'] = np.diag(f_a.noise_variance_)
 
@@ -146,16 +136,16 @@ class TestGPFA(unittest.TestCase):
         against the tif_transform
         """
         gpfa1 = GPFA(
-            bin_size=self.bin_size, x_dim=self.x_dim,
+            bin_size=self.bin_size, z_dim=self.z_dim,
             em_max_iters=self.n_iters
             )
-        gpfa1.fit(self.data)
-        latent_variable_orth1 = gpfa1.transform(self.data)
+        gpfa1.fit(self.X)
+        latent_variable_orth1 = gpfa1.transform(self.X)
         latent_variable_orth2 = GPFA(
-            bin_size=self.bin_size, x_dim=self.x_dim,
-            em_max_iters=self.n_iters).fit_transform(self.data)
-        for i in range(len(self.data)):
-            for j in range(self.x_dim):
+            bin_size=self.bin_size, z_dim=self.z_dim,
+            em_max_iters=self.n_iters).fit_transform(self.X)
+        for i in range(len(self.X)):
+            for j in range(self.z_dim):
                 self.assertTrue(
                     np.allclose(
                         latent_variable_orth1[i][j],
@@ -163,21 +153,19 @@ class TestGPFA(unittest.TestCase):
                         )
                     )
 
-    def test_exact_inference_with_ll(self):
+    def test_infer_latents(self):
         """
         Test the GPFA mean and covariance using the equation
         A5 from the Byron et a,. (2009) paper since the
         implementation is different from equation A5.
-
         Equation A5 can only be implemented for 1 trial hence, n_trial == 1
-
         Here mean is defined by (K_inv + C'R_invC)^-1 * C'R_inv * (y - d)
         and covaraince is (K_inv + C'R_invC)
         """
         # get the kernal as defined in GPFA
         _, k_big_inv, _ = gpfa_util.make_k_big(
                                                 self.params_init,
-                                                self.t_all
+                                                self.T
                                             )
         rinv = np.diag(1.0 / np.diag(self.params_init['R']))
         c_rinv = self.params_init['C'].T.dot(rinv)
@@ -186,56 +174,55 @@ class TestGPFA(unittest.TestCase):
         c_rinv_c = c_rinv.dot(self.params_init['C'])
 
         # subtract mean from activities (y - d)
-        dif = np.hstack(self.data['y']) - \
+        dif = np.hstack(self.X) - \
             self.params_init['d'][:, np.newaxis]
         # C'R_inv * (y - d)
         term1_mat = c_rinv.dot(dif).reshape(
-                                    (self.x_dim * self.t_all, -1),
+                                    (self.z_dim * self.T, -1),
                                     order='F'
             )
         # make a c_rinv_c big and block diagonal
-        blah = [c_rinv_c for _ in range(self.t_all)]
+        blah = [c_rinv_c for _ in range(self.T)]
         c_rinv_c_big = linalg.block_diag(*blah)
 
         # (K_inv + C'R_invC)^-1 * C'R_inv * (y - d)
         latent_var = linalg.inv(
             k_big_inv + c_rinv_c_big).dot(term1_mat).reshape(
-                (self.x_dim, self.t_all),
+                (self.z_dim, self.T),
                 order='F'
                 )
 
         # compute covariance
-        cov = np.full((self.x_dim, self.x_dim, self.t_all), np.nan)
-        idx = np.arange(0, self.x_dim * self.t_all + 1, self.x_dim)
-        for i in range(self.t_all):
+        cov = np.full((self.z_dim, self.z_dim, self.T), np.nan)
+        idx = np.arange(0, self.z_dim * self.T + 1, self.z_dim)
+        for i in range(self.T):
             cov[:, :, i] = linalg.inv(
                 k_big_inv + c_rinv_c_big)[idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
 
         # get mean and covariance as implemented by GPFA
-        seqs_latent, _ = gpfa_core.exact_inference_with_ll(
-            self.data, self.params_init
+        seqs_latent, _ = gpfa_core.infer_latents(
+            self.X, self.params_init
             )
         # Assert
         self.assertTrue(np.allclose(
-            seqs_latent['latent_variable'][0][0],
+            seqs_latent['pZ_mu'][0][0],
             latent_var[0]))
-        self.assertTrue(np.allclose(seqs_latent['Vsm'][0][0][0], cov[0][0]))
+        self.assertTrue(np.allclose(seqs_latent['pZ_cov'][0][0][0], cov[0][0]))
 
     def test_fill_persymm(self):
         """
         GPFA takes advantage of the persymmetric structure of k_big_inv
         by only computing the top half of the metric and filling the bottom
         half with results from the top half.
-
         Test if fill_persymm returns an expected filled matrix
         """
         _, k_big_inv, _ = gpfa_util.make_k_big(
                                                 self.params_init,
-                                                self.t_all
+                                                self.T
                                                 )
         full_k_big_inv = gpfa_util.fill_persymm(
-                                k_big_inv[:(self.x_dim*self.t_half), :],
-                                self.x_dim, self.t_all)
+                                k_big_inv[:(self.z_dim*self.t_half), :],
+                                self.z_dim, self.T)
         # Assert
         self.assertTrue(np.allclose(k_big_inv, full_k_big_inv))
 
@@ -243,9 +230,8 @@ class TestGPFA(unittest.TestCase):
         """
         Test GPFA orthonormalize function.
         """
-        # get sequence spiketrains to be orthonormalized
-        seqs_latent, _ = gpfa_core.exact_inference_with_ll(
-            self.data, self.params_init
+        seqs_latent, _ = gpfa_core.infer_latents(
+            self.X, self.params_init
             )
         corth, _ = gpfa_core.orthonormalize(self.params_init, seqs_latent)
         c_orth = linalg.orth(self.params_init['C'])
