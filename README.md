@@ -27,12 +27,12 @@ from gpfa.preprocessing import gpfa_preprocessing
 
 There are two methods offered for preprocessing data for GPFA (especially useful when working with spike data):
 Markup : 1. `get_seqs(...)`, converts binary spike trains into a recarray of spike counts.
-            1. user has the option to binned spikes into spike count bins of specified bin size.
-            2. user can also take the square root of the data
+            - user has the option to binned spikes into spike count bins of specified bin size.
+            - user can also take the square root of the data
          2. `remove_inactive_units(...)`, remove inactive units (neurons) based on training set (binned spike count data)
 e.g.,
 ```
-gpfa_preprocessing.get_seqs()
+gpfa_preprocessing.get_seqs(...)
 ```
 
 ### Tests

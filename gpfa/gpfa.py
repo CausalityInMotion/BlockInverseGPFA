@@ -189,16 +189,16 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> t = np.arange(0, 10, 0.01).reshape(-1,1)  # time series
     >>> timesteps = len(t)                        # number of time points
 
-    >>>     C = np.random.uniform(0, 2, (N, z_dim))     # loading matrix
-    >>>     obs_noise = np.random.uniform(0.2, 0.75, N) # rand noise parameters
+    >>> C = np.random.uniform(0, 2, (N, z_dim))     # loading matrix
+    >>> obs_noise = np.random.uniform(0.2, 0.75, N) # rand noise parameters
 
-    >>>     # mean
-    >>>     mu = np.zeros(t.shape)
-    >>>     # Create covariance matrix for GP using the squared
-    >>>     # exponential kernel from Yu et al.
-    >>>     sqdist = (t - t.T)**2
-    >>>     cov = sigma_f**2 * np.exp(-0.5 / tau_f**2 * sqdist)
-    ...                            + sigma_n**2 * np.eye(timesteps)
+    >>> # mean
+    >>> mu = np.zeros(t.shape)
+    >>> # Create covariance matrix for GP using the squared
+    >>> # exponential kernel from Yu et al.
+    >>> sqdist = (t - t.T)**2
+    >>> cov = sigma_f**2 * np.exp(-0.5 / tau_f**2 * sqdist)
+    ...                         + sigma_n**2 * np.eye(timesteps)
 
     >>> X = []
     >>> for n in range(num_trials):
