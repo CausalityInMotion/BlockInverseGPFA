@@ -189,9 +189,6 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> t = np.arange(0, 10, 0.01).reshape(-1,1)  # time series
     >>> timesteps = len(t)                        # number of time points
 
-    >>>  X = []
-    >>> for n in range(num_trials):
-    >>>     np.random.seed(seed[n])
     >>>     C = np.random.uniform(0, 2, (N, z_dim))     # loading matrix
     >>>     obs_noise = np.random.uniform(0.2, 0.75, N) # rand noise parameters
 
@@ -203,6 +200,10 @@ class GPFA(sklearn.base.BaseEstimator):
     >>>     cov = sigma_f**2 * np.exp(-0.5 / tau_f**2 * sqdist)
     ...                            + sigma_n**2 * np.eye(timesteps)
 
+    >>> X = []
+    >>> for n in range(num_trials):
+    >>>     np.random.seed(seed[n])
+
     >>>     # Draw three latent state samples from a Gaussian process
     >>>     # using the above cov
     >>>     Z = np.random.multivariate_normal(mu.ravel(), cov, z_dim)
@@ -211,10 +212,8 @@ class GPFA(sklearn.base.BaseEstimator):
     >>>     x = C@Z + np.random.normal(0, obs_noise, (timesteps, N)).T
     >>>     X.append(x)
 
-    >>> data = np.array(X)
-
     >>> gpfa = GPFA(bin_size=bin_size, z_dim=2)
-    >>> gpfa.fit(data)
+    >>> gpfa.fit(X)
     >>> results = gpfa.transform(data, returned_data=['pZ_mu_orth',
     ...                                               'pZ_mu'])
     >>> pZ_mu_orth = results['pZ_mu_orth']
@@ -222,7 +221,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
     or simply
 
-    >>> results = GPFA(bin_size=bin_size, z_dim=z_dim).fit_transform(data,
+    >>> results = GPFA(bin_size=bin_size, z_dim=z_dim).fit_transform(X,
     ...                returned_data=['pZ_mu_orth', 'pZ_mu'])
     """
 
@@ -424,7 +423,7 @@ class GPFA(sklearn.base.BaseEstimator):
         See Also
         --------
         GPFA.fit : fit the model with `observation`
-        GPFA.transform : transform `obsrvation` into trajectories
+        GPFA.transform : transform `observation` into trajectories
 
         """
         self.fit(X)

@@ -246,10 +246,10 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
         sum_Zall = Z_all.sum(axis=1)[:, np.newaxis]
         sum_Xall = X_all.sum(axis=1)[:, np.newaxis]
 
-        # term is (x_dim+1) x (x_dim+1)
+        # term is (z_dim+1) x (z_dim+1)
         term = np.vstack([np.hstack([sum_p_auto, sum_Zall]),
                           np.hstack([sum_Zall.T, T.sum().reshape((1, 1))])])
-        # z_dim x (x_dim+1)
+        # x_dim x (z_dim+1)
         cd = gpfa_util.rdiv(np.hstack([sum_XZtrans, sum_Xall]), term)
 
         params['C'] = cd[:, :z_dim]
