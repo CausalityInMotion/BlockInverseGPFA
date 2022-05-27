@@ -200,14 +200,14 @@ class TestGPFA(unittest.TestCase):
                 k_big_inv + c_rinv_c_big)[idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
 
         # get mean and covariance as implemented by GPFA
-        seqs_latent, _ = gpfa_core.infer_latents(
+        latent_seqs, _ = gpfa_core.infer_latents(
             self.X, self.params_init
             )
         # Assert
         self.assertTrue(np.allclose(
-            seqs_latent['pZ_mu'][0][0],
+            latent_seqs['pZ_mu'][0][0],
             latent_var[0]))
-        self.assertTrue(np.allclose(seqs_latent['pZ_cov'][0][0][0], cov[0][0]))
+        self.assertTrue(np.allclose(latent_seqs['pZ_cov'][0][0][0], cov[0][0]))
 
     def test_fill_persymm(self):
         """
@@ -230,10 +230,10 @@ class TestGPFA(unittest.TestCase):
         """
         Test GPFA orthonormalize function.
         """
-        seqs_latent, _ = gpfa_core.infer_latents(
+        latent_seqs, _ = gpfa_core.infer_latents(
             self.X, self.params_init
             )
-        corth, _ = gpfa_core.orthonormalize(self.params_init, seqs_latent)
+        corth, _ = gpfa_core.orthonormalize(self.params_init, latent_seqs)
         c_orth = linalg.orth(self.params_init['C'])
         # Assert
         self.assertTrue(np.allclose(c_orth, corth))

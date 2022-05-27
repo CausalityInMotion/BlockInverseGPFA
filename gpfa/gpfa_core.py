@@ -89,12 +89,6 @@ def fit(X, z_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
         iteration_time : list
             containing the runtime for each iteration step in the EM algorithm.
     """
-    # For compute efficiency, train on equal-length segments of trials
-    X_train_cut = gpfa_util.cut_trials(X)
-    if len(X_train_cut) == 0:
-        warnings.warn('No segments extracted for training. Defaulting to '
-                      'segLength=Inf.')
-        X_train_cut = gpfa_util.cut_trials(X, seg_length=np.inf)
 
     # ==================================
     # Initialize state model parameters
@@ -112,7 +106,7 @@ def fit(X, z_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
     # ========================================
     print('Initializing parameters using factor analysis...')
 
-    X_all = np.hstack(X_train_cut)
+    X_all = np.hstack(X)
     fa = FactorAnalysis(n_components=z_dim, copy=True,
                         noise_variance_init=np.diag(np.cov(X_all, bias=True)))
     fa.fit(X_all.T)
@@ -132,8 +126,8 @@ def fit(X, z_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
     # =====================
     print('\nFitting GPFA model...')
 
-    params_est, X_train_cut, ll_cut, iter_time = em(
-        params_init, X_train_cut, min_var_frac=min_var_frac,
+    params_est, X, ll_cut, iter_time = em(
+        params_init, X, min_var_frac=min_var_frac,
         max_iters=em_max_iters, tol=em_tol, freq_ll=freq_ll, verbose=verbose)
 
     fit_info = {'iteration_time': iter_time, 'log_likelihoods': ll_cut}
@@ -164,11 +158,11 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
             latent variable space
         R : numpy.ndarray of shape (#x_dim, #z_dim)
             observation noise covariance
-    X : numpy.ndarray
-        data structure containing numpy.ndarrays whose n-th element
-        (corresponding to the n-th segment) has shape of
-        (#x_dim x #seg_length) where seg_length is length of segments
-        to extract and is same across all x_dims.
+    X   : a list of observation sequences, one per trial.
+        Each element in X is a matrix of size #x_dim x #bins,
+        containing an observation sequence. The input dimensionality
+        #x_dim needs to be the same across elements in X, but #bins
+        can be different for each observation sequence.
     max_iters : int, optional
         number of EM iterations to run
         Default: 500
@@ -195,7 +189,7 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
     params_est : dict
         GPFA model parameter estimates, returned by EM algorithm (same
         format as params_init)
-    seqs_latent : numpy.recarray
+    latent_seqs : numpy.recarray
         a copy of the training data structure, augmented with the new
         fields:
         pZ_mu : numpy.ndarray of shape (#z_dim x #bins)
@@ -218,7 +212,6 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
     ll_old = ll_base = ll = 0.0
     iter_time = []
     var_floor = min_var_frac * np.diag(np.cov(np.hstack(X)))
-    seqs_latent = None
 
     # Loop once for each iteration of EM algorithm
     for iter_id in trange(1, max_iters + 1, desc='EM iteration',
@@ -231,17 +224,17 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
         # ==== E STEP =====
         if not np.isnan(ll):
             ll_old = ll
-        seqs_latent, ll = infer_latents(X, params, get_ll=get_ll)
+        latent_seqs, ll = infer_latents(X, params, get_ll=get_ll)
         lls.append(ll)
 
         # ==== M STEP ====
         sum_p_auto = np.zeros((z_dim, z_dim))
-        for seq_latent in seqs_latent:
+        for seq_latent in latent_seqs:
             sum_p_auto += seq_latent['pZ_cov'].sum(axis=2) \
                 + seq_latent['pZ_mu'].dot(
                 seq_latent['pZ_mu'].T)
         X_all = np.hstack(X)
-        Z_all = np.hstack(seqs_latent['pZ_mu'])
+        Z_all = np.hstack(latent_seqs['pZ_mu'])
         sum_XZtrans = X_all.dot(Z_all.T)
         sum_Zall = Z_all.sum(axis=1)[:, np.newaxis]
         sum_Xall = X_all.sum(axis=1)[:, np.newaxis]
@@ -250,7 +243,7 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
         term = np.vstack([np.hstack([sum_p_auto, sum_Zall]),
                           np.hstack([sum_Zall.T, T.sum().reshape((1, 1))])])
         # x_dim x (z_dim+1)
-        cd = gpfa_util.rdiv(np.hstack([sum_XZtrans, sum_Xall]), term)
+        cd = np.linalg.solve(term.T, np.hstack([sum_XZtrans, sum_Xall]).T).T
 
         params['C'] = cd[:, :z_dim]
         params['d'] = cd[:, -1]
@@ -280,7 +273,7 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
             params['R'] = (r + r.T) / 2  # ensure symmetry
 
         if params['notes']['learnKernelParams']:
-            res = learn_gp_params(seqs_latent, params, verbose=verbose)
+            res = learn_gp_params(latent_seqs, params, verbose=verbose)
             params['gamma'] = res['gamma']
 
         t_end = time.time() - tic
@@ -303,7 +296,7 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
         warnings.warn('Private variance floor used for one or more observed '
                       'dimensions in GPFA.')
 
-    return params, seqs_latent, lls, iter_time
+    return params, latent_seqs, lls, iter_time
 
 
 def infer_latents(X, params, get_ll=True):
@@ -333,7 +326,7 @@ def infer_latents(X, params, get_ll=True):
 
     Returns
     -------
-    seqs_latent : numpy.recarray
+    latent_seqs : numpy.recarray
         X_out : numpy.ndarray
             input data structure, whose n-th element (corresponding to the n-th
             experimental trial) has fields:
@@ -357,9 +350,9 @@ def infer_latents(X, params, get_ll=True):
     dtype_out = [(i, X_out[i].dtype) for i in X_out.dtype.names]
     dtype_out.extend([('pZ_mu', object), ('pZ_cov', object),
                       ('pZ_covGP', object)])
-    seqs_latent = np.empty(len(X_out), dtype=dtype_out)
+    latent_seqs = np.empty(len(X_out), dtype=dtype_out)
     for dtype_name in X_out.dtype.names:
-        seqs_latent[dtype_name] = X_out[dtype_name]
+        latent_seqs[dtype_name] = X_out[dtype_name]
 
     # Precomputations
     if params['notes']['RforceDiagonal']:
@@ -405,7 +398,7 @@ def infer_latents(X, params, get_ll=True):
         # Process all trials with length T
         n_list = np.where(t_all == t)[0]
         # dif is x_dim x sum(T)
-        dif = np.hstack(seqs_latent[n_list]['X']) - params['d'][:, np.newaxis]
+        dif = np.hstack(latent_seqs[n_list]['X']) - params['d'][:, np.newaxis]
         # term1Mat is (z_dim*T) x length(nList)
         term1_mat = c_rinv.dot(dif).reshape((z_dim * t, -1), order='F')
 
@@ -420,15 +413,15 @@ def infer_latents(X, params, get_ll=True):
         blk_prod = k_big[:z_dim * t_half, :].dot(
             gpfa_util.fill_persymm(np.eye(z_dim * t_half, z_dim * t) -
                                    blk_prod, z_dim, t))
-        # latent_variableMat is (z_dim*T) x length(nList)
+        # latent_variable Matrix (Z_mat) is (z_dim*T) x length(nList)
         Z_mat = gpfa_util.fill_persymm(
             blk_prod, z_dim, t).dot(term1_mat)
 
         for i, n in enumerate(n_list):
-            seqs_latent[n]['pZ_mu'] = \
+            latent_seqs[n]['pZ_mu'] = \
                 Z_mat[:, i].reshape((z_dim, t), order='F')
-            seqs_latent[n]['pZ_cov'] = vsm
-            seqs_latent[n]['pZ_covGP'] = vsm_gp
+            latent_seqs[n]['pZ_cov'] = vsm
+            latent_seqs[n]['pZ_covGP'] = vsm_gp
 
         if get_ll:
             # Compute data likelihood
@@ -442,15 +435,15 @@ def infer_latents(X, params, get_ll=True):
     else:
         ll = np.nan
 
-    return seqs_latent, ll
+    return latent_seqs, ll
 
 
-def learn_gp_params(seqs_latent, params, verbose=False):
+def learn_gp_params(latent_seqs, params, verbose=False):
     """Updates parameters of GP state model, given trajectories.
 
     Parameters
     ----------
-    seqs_latent : numpy.recarray
+    latent_seqs : numpy.recarray
         data structure containing trajectories;
     params : dict
         current GP state model parameters, which gives starting point
@@ -480,7 +473,7 @@ def learn_gp_params(seqs_latent, params, verbose=False):
     param_opt = {param_name: np.empty_like(param_init)}
 
     z_dim = param_init.shape[-1]
-    precomp = gpfa_util.make_precomp(seqs_latent, z_dim)
+    precomp = gpfa_util.make_precomp(latent_seqs, z_dim)
 
     # Loop once for each state dimension (each GP)
     for i in range(z_dim):

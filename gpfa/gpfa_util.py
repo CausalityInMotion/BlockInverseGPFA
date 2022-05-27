@@ -91,14 +91,6 @@ def cut_trials(X_in, seg_length=20):
     return X_out
 
 
-def rdiv(a, b):
-    """
-    Returns the solution to x b = a. Equivalent to MATLAB right matrix
-    division: a / b
-    """
-    return np.linalg.solve(b.T, a.T).T
-
-
 def logdet(A):
     """
     log(det(A)) where A is positive-definite.
@@ -216,7 +208,7 @@ def inv_persymm(M, blk_size):
     term = invA11.dot(A12)
     F22 = M[mkr:, mkr:] - A12.T.dot(term)
 
-    res12 = rdiv(-term, F22)
+    res12 = np.linalg.solve(F22.T, -term.T).T
     res11 = invA11 - res12.dot(term.T)
     res11 = (res11 + res11.T) / 2
 
@@ -441,7 +433,7 @@ def orthonormalize(Z, l_mat):
     z_dim = l_mat.shape[1]
     if z_dim == 1:
         TT = np.sqrt(np.dot(l_mat.T, l_mat))
-        Lorth = rdiv(l_mat, TT)
+        Lorth = np.linalg.solve(TT.T, l_mat.T).T
         pZ_mu_orth = np.dot(TT, Z)
     else:
         UU, DD, VV = sp.linalg.svd(l_mat, full_matrices=False)

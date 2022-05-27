@@ -242,7 +242,6 @@ class GPFA(sklearn.base.BaseEstimator):
             'pZ_cov',
             'pZ_covGP',
             'X')
-        self.has_spikes_bool = None
         self.verbose = verbose
 
         # will be updated later
@@ -273,8 +272,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
             If covariance matrix of input data is rank deficient.
         """
-        # Get the dimension of training data
-        self.has_spikes_bool = np.hstack(X).any(axis=1)
+
         # Check if training data covariance is full rank
         X_all = np.hstack(X)
         x_dim = X_all.shape[0]
@@ -288,7 +286,7 @@ class GPFA(sklearn.base.BaseEstimator):
         if self.verbose:
             print(f'Number of training trials: {len(X)}')
             print(f'Latent space dimensionality: {self.z_dim}')
-            print(f'Observation dimensionality: {self.has_spikes_bool.sum()}')
+            print(f'Observation dimensionality: {X_all.any(axis=1).sum()}')
 
         # The following does the heavy lifting.
         self.params_estimated, self.fit_info = gpfa_core.fit(
@@ -372,16 +370,9 @@ class GPFA(sklearn.base.BaseEstimator):
         Raises
         ------
         ValueError
-            If the number of units in `observations` is different from that
-            in the training data.
-
             If `returned_data` contains keys different from the ones in
             `self.valid_data_names`.
         """
-
-        if X[0].shape[0] != len(self.has_spikes_bool):
-            raise ValueError("'observed data' must contain the same number of "
-                             "units as the training data")
         invalid_keys = set(returned_data).difference(self.valid_data_names)
         if len(invalid_keys) > 0:
             raise ValueError("'returned_data' can only have the following "
