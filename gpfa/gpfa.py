@@ -87,6 +87,12 @@ class GPFA(sklearn.base.BaseEstimator):
     bin_size : float, optional
         observed data bin width in sec
         Default: 0.02
+    use_cut_trials : method, optional
+        the use of `cut_trials` should make computations more efficient
+        Note:
+            it might yield different results if the data is expected to have
+            slow (i.e., long timescale) latent fluctuations.
+        Defualt: False
     min_var_frac : float, optional
         fraction of overall data variance for each observed dimension to set as
         the private variance floor.  This is used to combat Heywood cases,
@@ -225,11 +231,12 @@ class GPFA(sklearn.base.BaseEstimator):
     ...                returned_data=['pZ_mu_orth', 'pZ_mu'])
     """
 
-    def __init__(self, bin_size=0.02, z_dim=3, min_var_frac=0.01,
-                 tau_init=0.1, eps_init=1.0E-3, em_tol=1.0E-8,
-                 em_max_iters=500, freq_ll=5, verbose=False):
+    def __init__(self, bin_size=0.02, z_dim=3, use_cut_trials=False,
+                 min_var_frac=0.01, tau_init=0.1, eps_init=1.0E-3,
+                 em_tol=1.0E-8, em_max_iters=500, freq_ll=5, verbose=False):
         self.bin_size = bin_size
         self.z_dim = z_dim
+        self.use_cut_trials = use_cut_trials
         self.min_var_frac = min_var_frac
         self.tau_init = tau_init
         self.eps_init = eps_init
@@ -255,12 +262,12 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X   : a list of observation sequences, one per trial.
+        X   : an array-like of observation sequences, one per trial.
             Each element in X is a matrix of size #x_dim x #bins,
             containing an observation sequence. The input dimensionality
             #x_dim needs to be the same across elements in X, but #bins
             can be different for each observation sequence.
-
+            Default : None
         Returns
         -------
         self : object
@@ -293,6 +300,7 @@ class GPFA(sklearn.base.BaseEstimator):
             X=X,
             z_dim=self.z_dim,
             bin_size=self.bin_size,
+            use_cut_trials=self.use_cut_trials,
             min_var_frac=self.min_var_frac,
             em_max_iters=self.em_max_iters,
             em_tol=self.em_tol,
@@ -311,11 +319,12 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X   : a list of observation sequences, one per trial.
+        X   : an array-like of observation sequences, one per trial.
             Each element in X is a matrix of size #x_dim x #bins,
             containing an observation sequence. The input dimensionality
             #x_dim needs to be the same across elements in X, but #bins
             can be different for each observation sequence.
+            Default : None
 
         returned_data : list of str
             Set `returned_data` to a list of str of desired resultant data e.g:
@@ -323,11 +332,11 @@ class GPFA(sklearn.base.BaseEstimator):
             The dimensionality reduction transform generates the following
             resultant data:
 
-               'pZ_mu_orth': orthonormalized posterior mean of latent
-               variable
-
                'pZ_mu': posterior mean of latent variable before
                orthonormalization
+
+               'pZ_mu_orth': orthonormalized posterior mean of latent
+               variable
 
                'pZ_cov': posterior covariance between latent variables
 
@@ -354,9 +363,9 @@ class GPFA(sklearn.base.BaseEstimator):
             following shape, specific to each data type, containing the
             corresponding data for the n-th trial:
 
-                `pZ_mu_orth`: (#z_dim, #bins) numpy.ndarray
-
                 `pZ_mu`:  (#z_dim, #bins) numpy.ndarray
+
+                `pZ_mu_orth`: (#z_dim, #bins) numpy.ndarray
 
                 `X`:  (#x_dim, #bins) numpy.ndarray
 
@@ -395,7 +404,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X   : list of observed data arrays per trial
+        X   : an array-like of observed data arrays per trial
             Refer to the :func:`GPFA.fit` docstring.
 
         returned_data : list of str
@@ -426,7 +435,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X   : a list of observation sequences, one per trial. 
+        X   : an array-like of observation sequences, one per trial.
             Each element in X is a matrix of size #x_dim x #bins,
             containing an observation sequence. The input dimensionality
             #x_dim needs to be the same across elements in X, but #bins

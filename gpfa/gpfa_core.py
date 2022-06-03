@@ -20,25 +20,32 @@ from tqdm import trange
 from . import gpfa_util
 
 
-def fit(X, z_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
-        em_max_iters=500, tau_init=0.1, eps_init=1.0E-3, freq_ll=5,
-        verbose=False):
+def fit(X, z_dim=3, bin_size=0.02, use_cut_trials=False, min_var_frac=0.01,
+        em_tol=1.0E-8, em_max_iters=500, tau_init=0.1, eps_init=1.0E-3,
+        freq_ll=5, verbose=False):
     """
     Fit the GPFA model with the given training data.
 
     Parameters
     ----------
-    X   : a list of observation sequences, one per trial.
+    X   : an array-like of observation sequences, one per trial.
         Each element in X is a matrix of size #x_dim x #bins,
         containing an observation sequence. The input dimensionality
         #x_dim needs to be the same across elements in X, but #bins
         can be different for each observation sequence.
+        Default : None
     z_dim : int, optional
         latent state dimensionality
         Default: 3
     bin_size : float, optional
         observed data bin width in sec
         Default: 0.02 [s]
+    use_cut_trials : method, optional
+        the use of `cut_trials` should make computations more efficient
+        Note:
+            it might yield different results if the data is expected to have
+            slow (i.e., long timescale) latent fluctuations.
+        Defualt: False
     min_var_frac : float, optional
         fraction of overall data variance for each observed dimension to set as
         the private variance floor.  This is used to combat Heywood cases,
@@ -89,7 +96,13 @@ def fit(X, z_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
         iteration_time : list
             containing the runtime for each iteration step in the EM algorithm.
     """
-
+    if use_cut_trials:
+        # For compute efficiency, train on equal-length segments of trials
+        X = gpfa_util.cut_trials(X)
+        if len(X) == 0:
+            warnings.warn('No segments extracted for training. Defaulting to '
+                          'segLength=Inf.')
+            X = gpfa_util.cut_trials(X, seg_length=np.inf)
     # ==================================
     # Initialize state model parameters
     # ==================================
@@ -158,11 +171,12 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
             latent variable space
         R : numpy.ndarray of shape (#x_dim, #z_dim)
             observation noise covariance
-    X   : a list of observation sequences, one per trial.
+    X   : an array-like of observation sequences, one per trial.
         Each element in X is a matrix of size #x_dim x #bins,
         containing an observation sequence. The input dimensionality
         #x_dim needs to be the same across elements in X, but #bins
         can be different for each observation sequence.
+        Default : None
     max_iters : int, optional
         number of EM iterations to run
         Default: 500

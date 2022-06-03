@@ -22,7 +22,7 @@ def cut_trials(X_in, seg_length=20):
 
     Parameters
     ----------
-    X_in : a list of observation sequences, one per trial.
+    X_in : an array-like of observation sequences, one per trial.
         Each element in X is a matrix of size #x_dim x #bins,
         containing an observation sequence. The input dimensionality
         #x_dim needs to be the same across elements in X, but #bins
@@ -149,13 +149,6 @@ def make_k_big(params, n_timesteps):
                                             Tdif ** 2) \
             + params['eps'][i] * np.eye(n_timesteps)
         K_big[i::z_dim, i::z_dim] = K
-        # the original MATLAB program uses here a special algorithm, provided
-        # in C and MEX, for inversion of Toeplitz matrix:
-        # [K_big_inv(idx+i, idx+i), logdet_K] = invToeplitz(K);
-        # TO-DO: use an inversion method optimized for Toeplitz matrix
-        # Below is an attempt to use such a method, not leading to a speed-up.
-        # # K_big_inv[i::x_dim, i::x_dim] = sp.linalg.solve_toeplitz((K[:, 0],
-        # K[0, :]), np.eye(T))
         K_big_inv[i::z_dim, i::z_dim] = np.linalg.inv(K)
         logdet_K = logdet(K)
 
