@@ -32,9 +32,9 @@ class TestGPFA(unittest.TestCase):
         def gen_test_data(trial_lens, rates_a, rates_b, use_sqrt=True):
             """
             Generate test data
-            There are 2 x n_neuron neurons -- the first n_neuron
-            neurons use rates from set a, and the second n_neuron
-            neurons use rates from set b.
+            There are 2 x number of neurons for each group -- the first 2
+            neurons use rates from set a, and the second 2 neurons use rates
+            from set b.
             Args:
                 trial_lens  : list of durations of each trial in [s]
                             len(trial_lens) corresponds with num of trials
@@ -50,6 +50,12 @@ class TestGPFA(unittest.TestCase):
                 seqs        : an array-like of binned spiketrains arrays per
                             trial
             """
+            # check the length of rates_a and rates_b must both be equal to 4
+            if len(rates_a) != 4:
+                raise ValueError("'rates_a' must have 4 elements in it")
+            if len(rates_b) != 4:
+                raise ValueError("'rates_b' must have 4 elements in it")
+
             seqs = np.empty(len(trial_lens), object)
 
             # generate data where num trials is len(trial_lens)
@@ -57,17 +63,17 @@ class TestGPFA(unittest.TestCase):
 
                 # get number of bins for the each epoch
                 # each each is a quarter of the total length.
-                epoch_len = t_l * .25
-                nbins_per_quarter = int(epoch_len / self.bin_size)
+                epoch_len = int(t_l / len(rates_a))
+                nbins_per_epoch = int(epoch_len / self.bin_size)
 
                 # generate two spike trains each with two neurons
                 # neurons one and two use rates_a
                 # neuros three and four use rates_b
                 # concatenate them into one spiketrain
                 spk_rates_a = np.random.poisson(
-                            rates_a[0], (self.n_neurons, nbins_per_quarter))
+                            rates_a[0], (self.n_neurons, nbins_per_epoch))
                 spk_rates_b = np.random.poisson(
-                            rates_b[0], (self.n_neurons, nbins_per_quarter))
+                            rates_b[0], (self.n_neurons, nbins_per_epoch))
                 binned_spikecount = np.concatenate([spk_rates_a, spk_rates_b])
 
                 l_rates_a = len(rates_a)
@@ -77,9 +83,9 @@ class TestGPFA(unittest.TestCase):
                     # get number of bins for the remaining epochs
                     # n_bins_per_dur = int(durs[i] / bin_size)
                     spk_rates_a = np.random.poisson(
-                            rates_a[i], (self.n_neurons, nbins_per_quarter))
+                            rates_a[i], (self.n_neurons, nbins_per_epoch))
                     spk_rates_b = np.random.poisson(
-                            rates_b[i], (self.n_neurons, nbins_per_quarter))
+                            rates_b[i], (self.n_neurons, nbins_per_epoch))
                     spk_i = np.concatenate([spk_rates_a, spk_rates_b])
                     # concatenate previous spiketrains with new spiketrains
                     # from current duration
@@ -167,7 +173,7 @@ class TestGPFA(unittest.TestCase):
         """
         test_latent_seqs = np.empty(
             len(self.X), dtype=[('pZ_mu', object), ('pZ_cov', object)])
-            
+
         for n, t in enumerate(self.T):
             # get the kernal as defined in GPFA
             _, k_big_inv, _ = gpfa_util.make_k_big(self.params_init, t)

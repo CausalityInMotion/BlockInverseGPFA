@@ -44,8 +44,9 @@ https://users.ece.cmu.edu/~byronyu/software.shtml
 from __future__ import division, print_function, unicode_literals
 
 import numpy as np
+import warnings
 import sklearn
-from . import gpfa_core
+from . import gpfa_core, gpfa_util
 
 
 __all__ = [
@@ -87,12 +88,13 @@ class GPFA(sklearn.base.BaseEstimator):
     bin_size : float, optional
         observed data bin width in sec
         Default: 0.02
-    use_cut_trials : method, optional
-        the use of `cut_trials` should make computations more efficient
-        Note:
-            it might yield different results if the data is expected to have
-            slow (i.e., long timescale) latent fluctuations.
-        Defualt: False
+    use_cut_trials : bool, optional
+        `use_cut_trials=True` results in using an approximation that might
+        make the fitting computations more efficient. In most cases, this
+        approximation shouldn't impact the fits qualitatively. It might do
+        so if the data is expected to have very slow (i.e., long timescale)
+        latent fluctuations.
+        Default: False
     min_var_frac : float, optional
         fraction of overall data variance for each observed dimension to set as
         the private variance floor.  This is used to combat Heywood cases,
@@ -279,7 +281,13 @@ class GPFA(sklearn.base.BaseEstimator):
 
             If covariance matrix of input data is rank deficient.
         """
-
+        if self.use_cut_trials:
+            # For compute efficiency, train on shorter segments of trials
+            X = gpfa_util.cut_trials(X)
+            if len(X) == 0:
+                warnings.warn('No segments extracted for training. Defaulting '
+                              'to segLength=Inf.')
+                X = gpfa_util.cut_trials(X, seg_length=np.inf)
         # Check if training data covariance is full rank
         X_all = np.hstack(X)
         x_dim = X_all.shape[0]
@@ -300,7 +308,6 @@ class GPFA(sklearn.base.BaseEstimator):
             X=X,
             z_dim=self.z_dim,
             bin_size=self.bin_size,
-            use_cut_trials=self.use_cut_trials,
             min_var_frac=self.min_var_frac,
             em_max_iters=self.em_max_iters,
             em_tol=self.em_tol,
