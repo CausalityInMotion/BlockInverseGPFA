@@ -1,6 +1,5 @@
 """
 GPFA util functions.
-
 :copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
 :copyright: Copyright 2014-2020 by the Elephant team.
 :license: Modified BSD, see LICENSE.txt for details.
@@ -19,7 +18,6 @@ def cut_trials(X_in, seg_length=20):
     overlapping segments if trial length is not integer multiple
     of segment length.  Ignores trials with length shorter than
     one segment length.
-
     Parameters
     ----------
     X_in : an array-like of observation sequences, one per trial.
@@ -27,24 +25,20 @@ def cut_trials(X_in, seg_length=20):
         containing an observation sequence. The input dimensionality
         #x_dim needs to be the same across elements in X, but #bins
         can be different for each observation sequence.
-
     seg_length : int
         length of segments to extract, in number of timesteps. If infinite,
         entire trials are extracted, i.e., no segmenting.
         Default: 20
-
     Returns
     -------
     X_out : np.ndarray
         data structure containing np.ndarrays whose n-th element
         (corresponding to the n-th segment) has shape of
         (#x_dim x #seg_length)
-
     Raises
     ------
     ValueError
         If `seq_length == 0`.
-
     """
     if seg_length == 0:
         raise ValueError("At least 1 extracted trial must be returned")
@@ -95,7 +89,6 @@ def logdet(A):
     """
     log(det(A)) where A is positive-definite.
     This is faster and more stable than using log(det(A)).
-
     Written by Tom Minka
     (c) Microsoft Corporation. All rights reserved.
     """
@@ -107,14 +100,12 @@ def make_k_big(params, n_timesteps):
     """
     Constructs full GP covariance matrix across all state dimensions and
     timesteps.
-
     Parameters
     ----------
     params : dict
         GPFA model parameters
     n_timesteps : int
         number of timesteps
-
     Returns
     -------
     K_big : np.ndarray
@@ -126,12 +117,10 @@ def make_k_big(params, n_timesteps):
         Inverse of K_big
     logdet_K_big : float
         Log determinant of K_big
-
     Raises
     ------
     ValueError
         If `params['covType'] != 'rbf'`.
-
     """
     if params['covType'] != 'rbf':
         raise ValueError("Only 'rbf' GP covariance type is supported.")
@@ -163,11 +152,9 @@ def inv_persymm(M, blk_size):
     faster than calling inv(M) directly because it only computes the
     top half of inv(M).  The bottom half of inv(M) is made up of
     elements from the top half of inv(M).
-
     WARNING: If the input matrix M is not block persymmetric, no
     error message will be produced and the output of this function will
     not be meaningful.
-
     Parameters
     ----------
     M : (blkSize*T, blkSize*T) np.ndarray
@@ -175,7 +162,6 @@ def inv_persymm(M, blk_size):
         Each block is blkSize x blkSize, arranged in a T x T grid.
     blk_size : int
         Edge length of one block
-
     Returns
     -------
     invM : (blkSize*T, blkSize*T) np.ndarray
@@ -217,7 +203,6 @@ def fill_persymm(p_in, blk_size, n_blocks, blk_size_vert=None):
     """
      Fills in the bottom half of a block persymmetric matrix, given the
      top half.
-
      Parameters
      ----------
      p_in :  (x_dim*Thalf, x_dim*T) np.ndarray
@@ -229,7 +214,6 @@ def fill_persymm(p_in, blk_size, n_blocks, blk_size_vert=None):
      blk_size_vert : int, optional
         Vertical block edge length if blocks are not square.
         `blk_size` is assumed to be the horizontal block edge length.
-
      Returns
      -------
      Pout : (z_dim*T, z_dim*T) np.ndarray
@@ -259,32 +243,27 @@ def fill_persymm(p_in, blk_size, n_blocks, blk_size_vert=None):
 def make_precomp(Seqs, z_dim):
     """
     Make the precomputation matrices specified by the GPFA algorithm.
-
     Parameters
     ----------
     Seqs : numpy.recarray
         The sequence struct of inferred latents, etc.
     z_dim : int
        The dimension of the latent space.
-
     Returns
     -------
     precomp : numpy.recarray
         The precomp struct will be updated with the posterior covaraince and
         the other requirements.
-
     Notes
     -----
     All inputs are named sensibly to those in `learnGPparams`.
     This code probably should not be called from anywhere but there.
-
     We bother with this method because we
     need this particular matrix sum to be
     as fast as possible.  Thus, no error checking
     is done here as that would add needless computation.
     Instead, the onus is on the caller (which should be
     learnGPparams()) to make sure this is called correctly.
-
     Finally, see the notes in the GPFA README.
     """
 
@@ -337,7 +316,6 @@ def grad_betgam(p, pre_comp, const):
     """
     Gradient computation for GP timescale optimization.
     This function is called by minimize.m.
-
     Parameters
     ----------
     p : float
@@ -347,7 +325,6 @@ def grad_betgam(p, pre_comp, const):
         structure containing precomputations
     const : dict
         contains hyperparameters
-
     Returns
     -------
     f : float
@@ -406,14 +383,12 @@ def orthonormalize(Z, l_mat):
     corresponding linear transform to the latent variables.
     In the following description, z_dim and x_dim refer to data dimensionality
     and latent dimensionality, respectively.
-
     Parameters
     ----------
     Z :  (z_dim, T) numpy.ndarray
         Latent variables
     l_mat :  (x_dim, z_dim) numpy.ndarray
         Loading matrix
-
     Returns
     -------
     pZ_mu_orth : (x_dim, T) numpy.ndarray
@@ -441,7 +416,6 @@ def orthonormalize(Z, l_mat):
 def segment_by_trial(seqs, Z, fn):
     """
     Segment and store data by trial.
-
     Parameters
     ----------
     seqs : numpy.recarray
@@ -450,17 +424,14 @@ def segment_by_trial(seqs, Z, fn):
         Data to be segmented (any dimensionality Z total number of timesteps)
     fn : str
         New field name of seq where segments of X are stored
-
     Returns
     -------
     seqs_new : numpy.recarray
         Data structure with new field `fn`
-
     Raises
     ------
     ValueError
         If "`All timespets` != Z.shape[1]".
-
     """
     T_all = [X_n.shape[1] for X_n in seqs['X']]
     if np.sum(T_all) != Z.shape[1]:

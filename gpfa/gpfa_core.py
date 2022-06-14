@@ -1,6 +1,5 @@
 """
 GPFA core functionality.
-
 :copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
 :copyright: Copyright 2014-2020 by the Elephant team.
 :license: Modified BSD, see LICENSE.txt for details.
@@ -25,7 +24,6 @@ def fit(X, z_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
         verbose=False):
     """
     Fit the GPFA model with the given training data.
-
     Parameters
     ----------
     X   : an array-like of observation sequences, one per trial.
@@ -65,7 +63,6 @@ def fit(X, z_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
     verbose : bool, optional
         specifies whether to display status messages
         Default: False
-
     Returns
     -------
     parameter_estimates : dict
@@ -84,7 +81,6 @@ def fit(X, z_dim=3, bin_size=0.02, min_var_frac=0.01, em_tol=1.0E-8,
                 space
             R: numpy.ndarray of shape (#x_dim, #z_dim)
                 observation noise covariance
-
     fit_info : dict
         Information of the fitting process and the parameters used there
         iteration_time : list
@@ -139,7 +135,6 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
        freq_ll=5, verbose=False):
     """
     Fits GPFA model parameters using expectation-maximization (EM) algorithm.
-
     Parameters
     ----------
     params_init : dict
@@ -184,7 +179,6 @@ def em(params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
     verbose : bool, optional
         specifies whether to display status messages
         Default: False
-
     Returns
     -------
     params_est : dict
@@ -304,7 +298,6 @@ def infer_latents(X, params, get_ll=True):
     """
     Extracts latent trajectories from observed data
     given GPFA model parameters.
-
     Parameters
     ----------
     X : numpy.ndarray
@@ -324,7 +317,6 @@ def infer_latents(X, params, get_ll=True):
             GP noise variance
     get_ll : bool, optional
           specifies whether to compute data log likelihood (default: True)
-
     Returns
     -------
     latent_seqs : numpy.recarray
@@ -441,7 +433,6 @@ def infer_latents(X, params, get_ll=True):
 
 def learn_gp_params(latent_seqs, params, verbose=False):
     """Updates parameters of GP state model, given trajectories.
-
     Parameters
     ----------
     latent_seqs : numpy.recarray
@@ -451,18 +442,15 @@ def learn_gp_params(latent_seqs, params, verbose=False):
         for gradient optimization;
     verbose : bool, optional
         specifies whether to display status messages (default: False)
-
     Returns
     -------
     param_opt : numpy.ndarray
         updated GP state model parameter
-
     Raises
     ------
     ValueError
         If `params['covType'] != 'rbf'`.
         If `params['notes']['learnGPNoise']` set to True.
-
     """
     if params['covType'] != 'rbf':
         raise ValueError("Only 'rbf' GP covariance type is supported.")
@@ -495,7 +483,6 @@ def orthonormalize(params_est, seqs):
     """
     Orthonormalize the columns of the loading matrix C and apply the
     corresponding linear transform to the latent variables.
-
     Parameters
     ----------
     params_est : dict
@@ -516,7 +503,6 @@ def orthonormalize(params_est, seqs):
             space
         R : numpy.ndarray of shape (#x_dim, #z_dim)
             observation noise covariance
-
     seqs : numpy.recarray
         Contains the embedding of the training data into the latent variable
         space.
@@ -530,7 +516,6 @@ def orthonormalize(params_est, seqs):
             posterior covariance between latent variables at each timepoint
         pZ_covGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
             posterior covariance over time for each latent variable
-
     Returns
     -------
     params_est : dict
