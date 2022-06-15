@@ -165,10 +165,10 @@ class GPFA(sklearn.base.BaseEstimator):
 
     Methods
     -------
-    _fit
-    _transform
-    _fit_transform
-    _score
+    fit
+    transform
+    fit_transform
+    score
 
     Example
     --------
