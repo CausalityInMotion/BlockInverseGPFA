@@ -248,3 +248,14 @@ class TestGPFA(unittest.TestCase):
         # Assert
         self.assertTrue(np.allclose(c_orth, corth))
 
+    def test_logdet(self):
+        """
+        Test GPFA lodget function.
+        """
+        np.random.seed(27)
+        # generate a positive definite matrix
+        matrix = np.random.randn(20, 20)
+        matrix = matrix.dot(matrix.T)
+        logdet_fast = gpfa_util.logdet(matrix)
+        logdet_ground_truth = np.log(np.linalg.det(matrix))
+        self.assertAlmostEqual(logdet_fast, logdet_ground_truth)
