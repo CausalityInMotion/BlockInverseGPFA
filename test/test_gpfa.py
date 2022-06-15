@@ -22,84 +22,94 @@ class TestGPFA(unittest.TestCase):
         functions to be tested
         """
         np.random.seed(0)
-        self.n_trials = 1
         self.bin_size = 0.02  # [s]
         self.tau_init = 0.1  # [s]
         self.eps_init = 1.0E-3
         self.n_iters = 10
         self.z_dim = 2
-        n_neurons = 2  # per rate therefore, there are 4 neurons
+        self.n_neurons = 2  # per rate therefore, there are 4 neurons
 
-        def gen_test_data(rates_a, rates_b, durs, n_neurons,
-                          bin_size, use_sqrt=True):
+        def gen_test_data(trial_lens, rates_a, rates_b, use_sqrt=True):
             """
             Generate test data
-            There are 2 x n_neuron neurons -- the first n_neuron
-            neurons use rates from set a, and the second n_neuron
-            neurons use rates from set b.
+            There are 2 x number of neurons for each group -- the first 2
+            neurons use rates from set a, and the second 2 neurons use rates
+            from set b.
             Args:
-                rates_a     : list of rates, one for each different time epoch
+                trial_lens  : list of durations of each trial in [s]
+                            len(trial_lens) corresponds with num of trials
+                rates_a     : list of rates, one for each different time epoch.
+                            Each each is a quarter of the total length.
                 rates_b     : list of rates, one for each different time epoch
                             shuffled differently from rates_a
-                durs        : list of durations of each time epoch in [s]
                 n_neurons   : number of neurons
                 bin_size    : bin size in [s] for analysis purpose
                 use_sqrt    : boolean
                             if true, take square root of binned spike trains
             Returns:
-                seqs        : a list of binned spiketrains arrays per trial
+                seqs        : an array-like of binned spiketrains arrays per
+                            trial
             """
-            # get number of bins for the first epoch
-            # for both rates_a and rates_b
-            n_bins_per_dur = int(durs[0] / bin_size)
+            # check the length of rates_a and rates_b must both be equal to 4
+            if len(rates_a) != 4:
+                raise ValueError("'rates_a' must have 4 elements in it")
+            if len(rates_b) != 4:
+                raise ValueError("'rates_b' must have 4 elements in it")
 
-            # generate two spike trains each with two neurons
-            # neurons one and two use rates_a
-            # neuros three and four use rates_b
-            # concatenate them into one spiketrain
-            spk_rates_a = np.random.poisson(rates_a[0],
-                                            (n_neurons, n_bins_per_dur))
-            spk_rates_b = np.random.poisson(rates_b[0],
-                                            (n_neurons, n_bins_per_dur))
-            binned_spikecount = np.concatenate([spk_rates_a, spk_rates_b])
+            seqs = np.empty(len(trial_lens), object)
 
-            l_rates_a = len(rates_a)
+            # generate data where num trials is len(trial_lens)
+            for n, t_l in enumerate(trial_lens):
 
-            # loop over the remaining rates
-            for i in range(1, l_rates_a):
-                # get number of bins for the remaining epochs
-                n_bins_per_dur = int(durs[i] / bin_size)
-                spk_rates_a = np.random.poisson(rates_a[i],
-                                                (n_neurons, n_bins_per_dur))
-                spk_rates_b = np.random.poisson(rates_b[i],
-                                                (n_neurons, n_bins_per_dur))
-                spk_i = np.concatenate([spk_rates_a, spk_rates_b])
-                # concatenate previous spiketrains with new spiketrains
-                # from current duration
-                binned_spikecount = np.concatenate(
-                                                [binned_spikecount,
-                                                 spk_i], axis=1
-                                                )
-            # take square root of the binned_spikeCount
-            # if `use_sqrt` is True (see paper for motivation)
-            if use_sqrt:
-                binned_sqrt_spkcount = np.sqrt(binned_spikecount)
+                # get number of bins for the each epoch
+                # each each is a quarter of the total length.
+                epoch_len = int(t_l / len(rates_a))
+                nbins_per_epoch = int(epoch_len / self.bin_size)
 
-            seqs = [binned_sqrt_spkcount]
+                # generate two spike trains each with two neurons
+                # neurons one and two use rates_a
+                # neuros three and four use rates_b
+                # concatenate them into one spiketrain
+                spk_rates_a = np.random.poisson(
+                            rates_a[0], (self.n_neurons, nbins_per_epoch))
+                spk_rates_b = np.random.poisson(
+                            rates_b[0], (self.n_neurons, nbins_per_epoch))
+                binned_spikecount = np.concatenate([spk_rates_a, spk_rates_b])
+
+                l_rates_a = len(rates_a)
+
+                # loop over the remaining rates
+                for i in range(1, l_rates_a):
+                    # get number of bins for the remaining epochs
+                    # n_bins_per_dur = int(durs[i] / bin_size)
+                    spk_rates_a = np.random.poisson(
+                            rates_a[i], (self.n_neurons, nbins_per_epoch))
+                    spk_rates_b = np.random.poisson(
+                            rates_b[i], (self.n_neurons, nbins_per_epoch))
+                    spk_i = np.concatenate([spk_rates_a, spk_rates_b])
+                    # concatenate previous spiketrains with new spiketrains
+                    # from current duration
+                    binned_spikecount = np.concatenate(
+                                        [binned_spikecount, spk_i], axis=1)
+                    # take square root of the binned_spikeCount
+                    # if `use_sqrt` is True (see paper for motivation)
+                    if use_sqrt:
+                        binned_sqrt_spkcount = np.sqrt(binned_spikecount)
+
+                    seqs[n] = binned_sqrt_spkcount
 
             return seqs
 
         rates_a = (2, 10, 2, 2)
         rates_b = (2, 2, 10, 2)
-        durs = (2.5, 2.5, 2.5, 2.5)
+        trial_lens = [8, 10]
 
-        # covert generated data to sequence spiketrains
-        self.X = gen_test_data(rates_a, rates_b, durs,
-                               n_neurons, bin_size=self.bin_size)
+        # generate data
+        self.X = gen_test_data(trial_lens, rates_a, rates_b)
 
-        # get the number of time steps in the trails
-        self.T = self.X[0].shape[1]
-        self.t_half = int(np.ceil(self.T / 2.0))
+        # get the number of time steps for each trial
+        self.T = np.array([X_n.shape[1] for X_n in self.X])
+        self.t_half = int(np.ceil(self.T[0] / 2.0))
 
         # Initialize state model parameters
         self.params_init = {}
@@ -112,7 +122,7 @@ class TestGPFA(unittest.TestCase):
         self.params_init['eps'] = self.eps_init * np.ones(self.z_dim)
 
         # Initialize observation model parameters using factor analysis
-        X_all = np.hstack(self.X)
+        X_all = np.hstack([self.X[0]])
         f_a = FactorAnalysis(
             n_components=self.z_dim, copy=True,
             noise_variance_init=np.diag(np.cov(X_all, bias=True))
@@ -158,56 +168,56 @@ class TestGPFA(unittest.TestCase):
         Test the GPFA mean and covariance using the equation
         A5 from the Byron et a,. (2009) paper since the
         implementation is different from equation A5.
-        Equation A5 can only be implemented for 1 trial hence, n_trial == 1
         Here mean is defined by (K_inv + C'R_invC)^-1 * C'R_inv * (y - d)
         and covaraince is (K_inv + C'R_invC)
         """
-        # get the kernal as defined in GPFA
-        _, k_big_inv, _ = gpfa_util.make_k_big(
-                                                self.params_init,
-                                                self.T
-                                            )
-        rinv = np.diag(1.0 / np.diag(self.params_init['R']))
-        c_rinv = self.params_init['C'].T.dot(rinv)
+        test_latent_seqs = np.empty(
+            len(self.X), dtype=[('pZ_mu', object), ('pZ_cov', object)])
 
-        # C'R_invC
-        c_rinv_c = c_rinv.dot(self.params_init['C'])
+        for n, t in enumerate(self.T):
+            # get the kernal as defined in GPFA
+            _, k_big_inv, _ = gpfa_util.make_k_big(self.params_init, t)
+            rinv = np.diag(1.0 / np.diag(self.params_init['R']))
+            c_rinv = self.params_init['C'].T.dot(rinv)
 
-        # subtract mean from activities (y - d)
-        dif = np.hstack(self.X) - \
-            self.params_init['d'][:, np.newaxis]
-        # C'R_inv * (y - d)
-        term1_mat = c_rinv.dot(dif).reshape(
-                                    (self.z_dim * self.T, -1),
-                                    order='F'
-            )
-        # make a c_rinv_c big and block diagonal
-        blah = [c_rinv_c for _ in range(self.T)]
-        c_rinv_c_big = linalg.block_diag(*blah)
+            # C'R_invC
+            c_rinv_c = c_rinv.dot(self.params_init['C'])
 
-        # (K_inv + C'R_invC)^-1 * C'R_inv * (y - d)
-        latent_var = linalg.inv(
-            k_big_inv + c_rinv_c_big).dot(term1_mat).reshape(
-                (self.z_dim, self.T),
-                order='F'
-                )
+            # subtract mean from activities (y - d)
+            dif = np.hstack([self.X[n]]) - \
+                self.params_init['d'][:, np.newaxis]
+            # C'R_inv * (y - d)
+            term1_mat = c_rinv.dot(dif).reshape(
+                                        (self.z_dim * t, -1), order='F')
+            # make a c_rinv_c big and block diagonal
+            blah = [c_rinv_c for _ in range(t)]
+            c_rinv_c_big = linalg.block_diag(*blah)  # (x_dim*T) x (x_dim*T)
 
-        # compute covariance
-        cov = np.full((self.z_dim, self.z_dim, self.T), np.nan)
-        idx = np.arange(0, self.z_dim * self.T + 1, self.z_dim)
-        for i in range(self.T):
-            cov[:, :, i] = linalg.inv(
-                k_big_inv + c_rinv_c_big)[idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
+            # (K_inv + C'R_invC)^-1 * C'R_inv * (y - d)
+            test_latent_seqs[n]['pZ_mu'] = linalg.inv(
+                k_big_inv + c_rinv_c_big).dot(term1_mat).reshape(
+                    (self.z_dim, t), order='F')
 
+            # compute covariance
+            cov = np.full((self.z_dim, self.z_dim, t), np.nan)
+            idx = np.arange(0, self.z_dim * t + 1, self.z_dim)
+            for i in range(t):
+                cov[:, :, i] = linalg.inv(
+                    k_big_inv + c_rinv_c_big)[
+                        idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
+
+            test_latent_seqs[n]['pZ_cov'] = cov
         # get mean and covariance as implemented by GPFA
-        seqs_latent, _ = gpfa_core.infer_latents(
+        latent_seqs, _ = gpfa_core.infer_latents(
             self.X, self.params_init
             )
         # Assert
         self.assertTrue(np.allclose(
-            seqs_latent['pZ_mu'][0][0],
-            latent_var[0]))
-        self.assertTrue(np.allclose(seqs_latent['pZ_cov'][0][0][0], cov[0][0]))
+                latent_seqs['pZ_mu'][0],
+                test_latent_seqs['pZ_mu'][0]))
+        self.assertTrue(np.allclose(
+                latent_seqs['pZ_cov'][0],
+                test_latent_seqs['pZ_cov'][0]))
 
     def test_fill_persymm(self):
         """
@@ -218,11 +228,11 @@ class TestGPFA(unittest.TestCase):
         """
         _, k_big_inv, _ = gpfa_util.make_k_big(
                                                 self.params_init,
-                                                self.T
+                                                self.T[0]
                                                 )
         full_k_big_inv = gpfa_util.fill_persymm(
                                 k_big_inv[:(self.z_dim*self.t_half), :],
-                                self.z_dim, self.T)
+                                self.z_dim, self.T[0])
         # Assert
         self.assertTrue(np.allclose(k_big_inv, full_k_big_inv))
 
@@ -230,10 +240,10 @@ class TestGPFA(unittest.TestCase):
         """
         Test GPFA orthonormalize function.
         """
-        seqs_latent, _ = gpfa_core.infer_latents(
+        latent_seqs, _ = gpfa_core.infer_latents(
             self.X, self.params_init
             )
-        corth, _ = gpfa_core.orthonormalize(self.params_init, seqs_latent)
+        corth, _ = gpfa_core.orthonormalize(self.params_init, latent_seqs)
         c_orth = linalg.orth(self.params_init['C'])
         # Assert
         self.assertTrue(np.allclose(c_orth, corth))

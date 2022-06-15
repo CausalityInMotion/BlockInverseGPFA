@@ -44,8 +44,9 @@ https://users.ece.cmu.edu/~byronyu/software.shtml
 from __future__ import division, print_function, unicode_literals
 
 import numpy as np
+import warnings
 import sklearn
-from . import gpfa_core
+from . import gpfa_core, gpfa_util
 
 
 __all__ = [
@@ -142,7 +143,6 @@ class GPFA(sklearn.base.BaseEstimator):
     fit_info : dict
         Information of the fitting process. Updated at each run of the fit()
         method.
-
         iteration_time : list
             containing the runtime for each iteration step in the EM algorithm.
         log_likelihoods : list
@@ -184,7 +184,6 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> N = 10                                      # number of units
     >>> z_dim = 3                                   # number of latent state
 
-
     >>> # get some finte number of points
     >>> t = np.arange(0, 10, 0.01).reshape(-1,1)  # time series
     >>> timesteps = len(t)                        # number of time points
@@ -225,9 +224,9 @@ class GPFA(sklearn.base.BaseEstimator):
     ...                returned_data=['pZ_mu_orth', 'pZ_mu'])
     """
 
-    def __init__(self, bin_size=0.02, z_dim=3, min_var_frac=0.01,
-                 tau_init=0.1, eps_init=1.0E-3, em_tol=1.0E-8,
-                 em_max_iters=500, freq_ll=5, verbose=False):
+    def __init__(self, bin_size=0.02, z_dim=3,
+                 min_var_frac=0.01, tau_init=0.1, eps_init=1.0E-3,
+                 em_tol=1.0E-8, em_max_iters=500, freq_ll=5, verbose=False):
         self.bin_size = bin_size
         self.z_dim = z_dim
         self.min_var_frac = min_var_frac
@@ -242,7 +241,6 @@ class GPFA(sklearn.base.BaseEstimator):
             'pZ_cov',
             'pZ_covGP',
             'X')
-        self.has_spikes_bool = None
         self.verbose = verbose
 
         # will be updated later
@@ -250,17 +248,25 @@ class GPFA(sklearn.base.BaseEstimator):
         self.fit_info = {}
         self.transform_info = {}
 
-    def fit(self, X):
+    def fit(self, X, use_cut_trials=False):
         """
         Fit the model with the given training data.
 
         Parameters
         ----------
-        X   : a list of observation sequences, one per trial.
+        X   : an array-like of observation sequences, one per trial.
             Each element in X is a matrix of size #x_dim x #bins,
             containing an observation sequence. The input dimensionality
             #x_dim needs to be the same across elements in X, but #bins
             can be different for each observation sequence.
+            Default : None
+        use_cut_trials : bool, optional
+            `use_cut_trials=True` results in using an approximation that might
+            make the fitting computations more efficient. In most cases, this
+            approximation shouldn't impact the fits qualitatively. It might do
+            so if the data is expected to have very slow (i.e., long timescale)
+            latent fluctuations.
+            Default: False
 
         Returns
         -------
@@ -270,11 +276,15 @@ class GPFA(sklearn.base.BaseEstimator):
         Raises
         ------
         ValueError
-
             If covariance matrix of input data is rank deficient.
         """
-        # Get the dimension of training data
-        self.has_spikes_bool = np.hstack(X).any(axis=1)
+        if use_cut_trials:
+            # For compute efficiency, train on shorter segments of trials
+            X = gpfa_util.cut_trials(X)
+            if len(X) == 0:
+                warnings.warn('No segments extracted for training. Defaulting '
+                              'to segLength=Inf.')
+                X = gpfa_util.cut_trials(X, seg_length=np.inf)
         # Check if training data covariance is full rank
         X_all = np.hstack(X)
         x_dim = X_all.shape[0]
@@ -288,7 +298,7 @@ class GPFA(sklearn.base.BaseEstimator):
         if self.verbose:
             print(f'Number of training trials: {len(X)}')
             print(f'Latent space dimensionality: {self.z_dim}')
-            print(f'Observation dimensionality: {self.has_spikes_bool.sum()}')
+            print(f'Observation dimensionality: {X_all.any(axis=1).sum()}')
 
         # The following does the heavy lifting.
         self.params_estimated, self.fit_info = gpfa_core.fit(
@@ -313,11 +323,12 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X   : a list of observation sequences, one per trial.
+        X   : an array-like of observation sequences, one per trial.
             Each element in X is a matrix of size #x_dim x #bins,
             containing an observation sequence. The input dimensionality
             #x_dim needs to be the same across elements in X, but #bins
             can be different for each observation sequence.
+            Default : None
 
         returned_data : list of str
             Set `returned_data` to a list of str of desired resultant data e.g:
@@ -325,11 +336,11 @@ class GPFA(sklearn.base.BaseEstimator):
             The dimensionality reduction transform generates the following
             resultant data:
 
-               'pZ_mu_orth': orthonormalized posterior mean of latent
-               variable
-
                'pZ_mu': posterior mean of latent variable before
                orthonormalization
+
+               'pZ_mu_orth': orthonormalized posterior mean of latent
+               variable
 
                'pZ_cov': posterior covariance between latent variables
 
@@ -342,7 +353,6 @@ class GPFA(sklearn.base.BaseEstimator):
             returned.
 
             Default is ['pZ_mu_orth'].
-
         Returns
         -------
         numpy.ndarray or dict
@@ -356,9 +366,9 @@ class GPFA(sklearn.base.BaseEstimator):
             following shape, specific to each data type, containing the
             corresponding data for the n-th trial:
 
-                `pZ_mu_orth`: (#z_dim, #bins) numpy.ndarray
-
                 `pZ_mu`:  (#z_dim, #bins) numpy.ndarray
+
+                `pZ_mu_orth`: (#z_dim, #bins) numpy.ndarray
 
                 `X`:  (#x_dim, #bins) numpy.ndarray
 
@@ -372,16 +382,10 @@ class GPFA(sklearn.base.BaseEstimator):
         Raises
         ------
         ValueError
-            If the number of units in `observations` is different from that
-            in the training data.
-
             If `returned_data` contains keys different from the ones in
             `self.valid_data_names`.
         """
 
-        if X[0].shape[0] != len(self.has_spikes_bool):
-            raise ValueError("'observed data' must contain the same number of "
-                             "units as the training data")
         invalid_keys = set(returned_data).difference(self.valid_data_names)
         if len(invalid_keys) > 0:
             raise ValueError("'returned_data' can only have the following "
@@ -404,9 +408,8 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X   : list of observed data arrays per trial
+        X   : an array-like of observed data arrays per trial
             Refer to the :func:`GPFA.fit` docstring.
-
         returned_data : list of str
             Refer to the :func:`GPFA.transform` docstring.
 
@@ -424,7 +427,6 @@ class GPFA(sklearn.base.BaseEstimator):
         --------
         GPFA.fit : fit the model with `observation`
         GPFA.transform : transform `observation` into trajectories
-
         """
         self.fit(X)
         return self.transform(X, returned_data=returned_data)
@@ -435,7 +437,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X   : a list of observation sequences, one per trial. 
+        X   : an array-like of observation sequences, one per trial.
             Each element in X is a matrix of size #x_dim x #bins,
             containing an observation sequence. The input dimensionality
             #x_dim needs to be the same across elements in X, but #bins

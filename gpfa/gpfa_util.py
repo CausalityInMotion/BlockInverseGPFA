@@ -22,7 +22,7 @@ def cut_trials(X_in, seg_length=20):
 
     Parameters
     ----------
-    X_in : a list of observation sequences, one per trial.
+    X_in : an array-like of observation sequences, one per trial.
         Each element in X is a matrix of size #x_dim x #bins,
         containing an observation sequence. The input dimensionality
         #x_dim needs to be the same across elements in X, but #bins
@@ -44,8 +44,8 @@ def cut_trials(X_in, seg_length=20):
     ------
     ValueError
         If `seq_length == 0`.
-
     """
+
     if seg_length == 0:
         raise ValueError("At least 1 extracted trial must be returned")
     if np.isinf(seg_length):
@@ -91,14 +91,6 @@ def cut_trials(X_in, seg_length=20):
     return X_out
 
 
-def rdiv(a, b):
-    """
-    Returns the solution to x b = a. Equivalent to MATLAB right matrix
-    division: a / b
-    """
-    return np.linalg.solve(b.T, a.T).T
-
-
 def logdet(A):
     """
     log(det(A)) where A is positive-definite.
@@ -139,7 +131,6 @@ def make_k_big(params, n_timesteps):
     ------
     ValueError
         If `params['covType'] != 'rbf'`.
-
     """
     if params['covType'] != 'rbf':
         raise ValueError("Only 'rbf' GP covariance type is supported.")
@@ -157,13 +148,6 @@ def make_k_big(params, n_timesteps):
                                             Tdif ** 2) \
             + params['eps'][i] * np.eye(n_timesteps)
         K_big[i::z_dim, i::z_dim] = K
-        # the original MATLAB program uses here a special algorithm, provided
-        # in C and MEX, for inversion of Toeplitz matrix:
-        # [K_big_inv(idx+i, idx+i), logdet_K] = invToeplitz(K);
-        # TO-DO: use an inversion method optimized for Toeplitz matrix
-        # Below is an attempt to use such a method, not leading to a speed-up.
-        # # K_big_inv[i::x_dim, i::x_dim] = sp.linalg.solve_toeplitz((K[:, 0],
-        # K[0, :]), np.eye(T))
         K_big_inv[i::z_dim, i::z_dim] = np.linalg.inv(K)
         logdet_K = logdet(K)
 
@@ -216,7 +200,7 @@ def inv_persymm(M, blk_size):
     term = invA11.dot(A12)
     F22 = M[mkr:, mkr:] - A12.T.dot(term)
 
-    res12 = rdiv(-term, F22)
+    res12 = np.linalg.solve(F22.T, -term.T).T
     res11 = invA11 - res12.dot(term.T)
     res11 = (res11 + res11.T) / 2
 
@@ -299,7 +283,6 @@ def make_precomp(Seqs, z_dim):
     is done here as that would add needless computation.
     Instead, the onus is on the caller (which should be
     learnGPparams()) to make sure this is called correctly.
-
     Finally, see the notes in the GPFA README.
     """
 
@@ -351,7 +334,7 @@ def make_precomp(Seqs, z_dim):
 def grad_betgam(p, pre_comp, const):
     """
     Gradient computation for GP timescale optimization.
-    This function is called by minimize.m.
+    This function is called by minimize
 
     Parameters
     ----------
@@ -441,7 +424,7 @@ def orthonormalize(Z, l_mat):
     z_dim = l_mat.shape[1]
     if z_dim == 1:
         TT = np.sqrt(np.dot(l_mat.T, l_mat))
-        Lorth = rdiv(l_mat, TT)
+        Lorth = np.linalg.solve(TT.T, l_mat.T).T
         pZ_mu_orth = np.dot(TT, Z)
     else:
         UU, DD, VV = sp.linalg.svd(l_mat, full_matrices=False)
@@ -475,8 +458,8 @@ def segment_by_trial(seqs, Z, fn):
     ------
     ValueError
         If "`All timespets` != Z.shape[1]".
-
     """
+
     T_all = [X_n.shape[1] for X_n in seqs['X']]
     if np.sum(T_all) != Z.shape[1]:
         raise ValueError('size of X incorrect.')
