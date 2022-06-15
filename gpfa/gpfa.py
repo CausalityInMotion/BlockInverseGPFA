@@ -70,17 +70,17 @@ class GPFA(sklearn.base.BaseEstimator):
 
     In the first scenario, only one single dataset is used to fit the model and
     to extract the neural trajectories. The parameters that describe the
-    transformation are first extracted from the data using the `_fit()` method
+    transformation are first extracted from the data using the `fit()` method
     of the GPFA class. Then the same data is projected into the orthonormal
-    basis using the method `_transform()`. The `_fit_transform()` method can be
+    basis using the method `transform()`. The `fit_transform()` method can be
     used to perform these two steps at once.
 
     In the second scenario, a single dataset is split into training and test
     datasets. Here, the parameters are estimated from the training data. Then
     the test data is projected into the low-dimensional space previously
     obtained from the training data. This analysis is performed by executing
-    first the `_fit()` method on the training data, followed by the
-    `_transform()` method on the test dataset.
+    first the `fit()` method on the training data, followed by the
+    `transform()` method on the test dataset.
 
     The GPFA class is compatible to the cross-validation functions of
     `sklearn.model_selection`, such that users can perform cross-validation to
@@ -216,15 +216,15 @@ class GPFA(sklearn.base.BaseEstimator):
     >>>     X.append(x)
 
     >>> gpfa = GPFA(bin_size=bin_size, z_dim=2)
-    >>> gpfa._fit(X)
-    >>> results = gpfa._transform(data, returned_data=['pZ_mu_orth',
+    >>> gpfa.fit(X)
+    >>> results = gpfa.transform(data, returned_data=['pZ_mu_orth',
     ...                                               'pZ_mu'])
     >>> pZ_mu_orth = results['pZ_mu_orth']
     >>> pZ_mu = results['pZ_mu']
 
     or simply
 
-    >>> results = GPFA(bin_size=bin_size, z_dim=z_dim)._fit_transform(X,
+    >>> results = GPFA(bin_size=bin_size, z_dim=z_dim).fit_transform(X,
     ...                returned_data=['pZ_mu_orth', 'pZ_mu'])
     """
 
@@ -252,7 +252,7 @@ class GPFA(sklearn.base.BaseEstimator):
         self.fit_info = {}
         self.transform_info = {}
 
-    def _fit(self, X, use_cut_trials=False):
+    def fit(self, X, use_cut_trials=False):
         """
         Fit the model with the given training data.
 
@@ -319,7 +319,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return self
 
-    def _transform(self, X, returned_data=['pZ_mu_orth']):
+    def transform(self, X, returned_data=['pZ_mu_orth']):
         """
         Obtain trajectories of neural activity in a low-dimensional latent
         variable space by inferring the posterior mean of the obtained GPFA
@@ -405,7 +405,7 @@ class GPFA(sklearn.base.BaseEstimator):
             return seqs[returned_data[0]]
         return {i: seqs[i] for i in returned_data}
 
-    def _fit_transform(self, X, returned_data=['pZ_mu_orth']):
+    def fit_transform(self, X, returned_data=['pZ_mu_orth']):
         """
         Fit the model with `observed` data and apply the dimensionality
         reduction on the `observations`.
@@ -432,10 +432,10 @@ class GPFA(sklearn.base.BaseEstimator):
         GPFA.fit : fit the model with `observation`
         GPFA.transform : transform `observation` into trajectories
         """
-        self._fit(X)
-        return self._transform(X, returned_data=returned_data)
+        self.fit(X)
+        return self.transform(X, returned_data=returned_data)
 
-    def _score(self, X):
+    def score(self, X):
         """
         Returns the log-likelihood of the given data under the fitted model
 
@@ -452,7 +452,7 @@ class GPFA(sklearn.base.BaseEstimator):
         log_likelihood : float
             Log-likelihood of the given spiketrains under the fitted model.
         """
-        self._transform(X)
+        self.transform(X)
         return self.transform_info['log_likelihood']
 
     def _fitting_core(self, X, z_dim=3, bin_size=0.02, min_var_frac=0.01,
