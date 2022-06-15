@@ -16,6 +16,7 @@ import scipy.linalg as linalg
 import scipy.optimize as optimize
 import scipy.sparse as sparse
 from sklearn.decomposition import FactorAnalysis
+from sklearn.utils.extmath import fast_logdet
 from tqdm import trange
 from . import gpfa_util
 
@@ -362,7 +363,7 @@ def infer_latents(X, params, get_ll=True):
     else:
         rinv = linalg.inv(params['R'])
         rinv = (rinv + rinv.T) / 2  # ensure symmetry
-        logdet_r = gpfa_util.logdet(params['R'])
+        logdet_r = fast_logdet(params['R'])
 
     c_rinv = params['C'].T.dot(rinv)
     c_rinv_c = c_rinv.dot(params['C'])

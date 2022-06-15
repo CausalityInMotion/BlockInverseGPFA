@@ -11,6 +11,7 @@ from __future__ import division, print_function, unicode_literals
 import warnings
 import numpy as np
 import scipy as sp
+from sklearn.utils.extmath import fast_logdet
 
 
 def cut_trials(X_in, seg_length=20):
@@ -91,18 +92,6 @@ def cut_trials(X_in, seg_length=20):
     return X_out
 
 
-def logdet(A):
-    """
-    log(det(A)) where A is positive-definite.
-    This is faster and more stable than using log(det(A)).
-
-    Written by Tom Minka
-    (c) Microsoft Corporation. All rights reserved.
-    """
-    U = np.linalg.cholesky(A)
-    return 2 * (np.log(np.diag(U))).sum()
-
-
 def make_k_big(params, n_timesteps):
     """
     Constructs full GP covariance matrix across all state dimensions and
@@ -149,7 +138,7 @@ def make_k_big(params, n_timesteps):
             + params['eps'][i] * np.eye(n_timesteps)
         K_big[i::z_dim, i::z_dim] = K
         K_big_inv[i::z_dim, i::z_dim] = np.linalg.inv(K)
-        logdet_K = logdet(K)
+        logdet_K = fast_logdet(K)
 
         logdet_K_big = logdet_K_big + logdet_K
 
@@ -207,7 +196,7 @@ def inv_persymm(M, blk_size):
     # Fill in bottom half of invM by picking elements from res11 and res12
     invM = fill_persymm(np.hstack([res11, res12]), blk_size, T)
 
-    logdet_M = -logdet(invA11) + logdet(F22)
+    logdet_M = -fast_logdet(invA11) + fast_logdet(F22)
 
     return invM, logdet_M
 
@@ -367,7 +356,7 @@ def grad_betgam(p, pre_comp, const):
         Thalf = int(np.ceil(T / 2.0))
 
         Kinv = np.linalg.inv(Kmax[:T, :T])
-        logdet_K = logdet(Kmax[:T, :T])
+        logdet_K = fast_logdet(Kmax[:T, :T])
 
         KinvM = Kinv[:Thalf, :].dot(dKdgamma_max[:T, :T])  # Thalf x T
         KinvMKinv = (KinvM.dot(Kinv)).T  # Thalf x T
