@@ -15,8 +15,8 @@ import numpy as np
 import scipy.linalg as linalg
 import scipy.optimize as optimize
 import scipy.sparse as sparse
-from sklearn.decomposition import FactorAnalysis
 from sklearn.utils.extmath import fast_logdet
+from sklearn.decomposition import FactorAnalysis
 from tqdm import trange
 from . import gpfa_util
 
