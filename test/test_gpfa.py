@@ -9,7 +9,7 @@ import unittest
 import numpy as np
 from scipy import linalg
 from sklearn.decomposition import FactorAnalysis
-from gpfa import GPFA, gpfa_core, gpfa_util
+from gpfa import GPFA
 
 
 class TestGPFA(unittest.TestCase):
@@ -140,17 +140,18 @@ class TestGPFA(unittest.TestCase):
             'RforceDiagonal': True,
         }
 
+        self.gpfa = GPFA(
+            bin_size=self.bin_size, z_dim=self.z_dim,
+            em_max_iters=self.n_iters
+            )
+
     def test_fit_transform(self):
         """
         Test the fit and tranform methods
         against the tif_transform
         """
-        gpfa1 = GPFA(
-            bin_size=self.bin_size, z_dim=self.z_dim,
-            em_max_iters=self.n_iters
-            )
-        gpfa1.fit(self.X)
-        latent_variable_orth1 = gpfa1.transform(self.X)
+        self.gpfa.fit(self.X)
+        latent_variable_orth1 = self.gpfa.transform(self.X)
         latent_variable_orth2 = GPFA(
             bin_size=self.bin_size, z_dim=self.z_dim,
             em_max_iters=self.n_iters).fit_transform(self.X)
@@ -176,7 +177,9 @@ class TestGPFA(unittest.TestCase):
 
         for n, t in enumerate(self.T):
             # get the kernal as defined in GPFA
-            _, k_big_inv, _ = gpfa_util.make_k_big(self.params_init, t)
+            _, k_big_inv, _ = self.gpfa._make_k_big(
+                                                    params=self.params_init,
+                                                    n_timesteps=t)
             rinv = np.diag(1.0 / np.diag(self.params_init['R']))
             c_rinv = self.params_init['C'].T.dot(rinv)
 
@@ -208,8 +211,8 @@ class TestGPFA(unittest.TestCase):
 
             test_latent_seqs[n]['pZ_cov'] = cov
         # get mean and covariance as implemented by GPFA
-        latent_seqs, _ = gpfa_core.infer_latents(
-            self.X, self.params_init
+        latent_seqs, _ = self.gpfa._infer_latents(
+                                        self.X, self.params_init
             )
         # Assert
         self.assertTrue(np.allclose(
@@ -226,11 +229,11 @@ class TestGPFA(unittest.TestCase):
         half with results from the top half.
         Test if fill_persymm returns an expected filled matrix
         """
-        _, k_big_inv, _ = gpfa_util.make_k_big(
+        _, k_big_inv, _ = self.gpfa._make_k_big(
                                                 self.params_init,
                                                 self.T[0]
                                                 )
-        full_k_big_inv = gpfa_util.fill_persymm(
+        full_k_big_inv = self.gpfa._fill_persymm(
                                 k_big_inv[:(self.z_dim*self.t_half), :],
                                 self.z_dim, self.T[0])
         # Assert
@@ -240,10 +243,10 @@ class TestGPFA(unittest.TestCase):
         """
         Test GPFA orthonormalize function.
         """
-        latent_seqs, _ = gpfa_core.infer_latents(
+        latent_seqs, _ = self.gpfa._infer_latents(
             self.X, self.params_init
             )
-        corth, _ = gpfa_core.orthonormalize(self.params_init, latent_seqs)
+        corth, _ = self.gpfa._orthonormalize(self.params_init, latent_seqs)
         c_orth = linalg.orth(self.params_init['C'])
         # Assert
         self.assertTrue(np.allclose(c_orth, corth))
