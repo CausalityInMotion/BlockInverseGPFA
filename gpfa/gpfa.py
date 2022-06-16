@@ -72,8 +72,7 @@ class GPFA(sklearn.base.BaseEstimator):
     to extract the neural trajectories. The parameters that describe the
     transformation are first extracted from the data using the `fit()` method
     of the GPFA class. Then the same data is projected into the orthonormal
-    basis using the method `transform()`. The `fit_transform()` method can be
-    used to perform these two steps at once.
+    basis using the method `transform()`.
 
     In the second scenario, a single dataset is split into training and test
     datasets. Here, the parameters are estimated from the training data. Then
@@ -167,7 +166,6 @@ class GPFA(sklearn.base.BaseEstimator):
     -------
     fit
     transform
-    fit_transform
     score
 
     Example
@@ -222,10 +220,6 @@ class GPFA(sklearn.base.BaseEstimator):
     >>> pZ_mu_orth = results['pZ_mu_orth']
     >>> pZ_mu = results['pZ_mu']
 
-    or simply
-
-    >>> results = GPFA(bin_size=bin_size, z_dim=z_dim).fit_transform(X,
-    ...                returned_data=['pZ_mu_orth', 'pZ_mu'])
     """
 
     def __init__(self, bin_size=0.02, z_dim=3,
@@ -404,36 +398,6 @@ class GPFA(sklearn.base.BaseEstimator):
         if len(returned_data) == 1:
             return seqs[returned_data[0]]
         return {i: seqs[i] for i in returned_data}
-
-    def fit_transform(self, X, returned_data=['pZ_mu_orth']):
-        """
-        Fit the model with `observed` data and apply the dimensionality
-        reduction on the `observations`.
-
-        Parameters
-        ----------
-        X   : an array-like of observed data arrays per trial
-            Refer to the :func:`GPFA.fit` docstring.
-        returned_data : list of str
-            Refer to the :func:`GPFA.transform` docstring.
-
-        Returns
-        -------
-        numpy.ndarray or dict
-            Refer to the :func:`GPFA.transform` docstring.
-
-        Raises
-        ------
-        ValueError
-             Refer to :func:`GPFA.fit` and :func:`GPFA.transform`.
-
-        See Also
-        --------
-        GPFA.fit : fit the model with `observation`
-        GPFA.transform : transform `observation` into trajectories
-        """
-        self.fit(X)
-        return self.transform(X, returned_data=returned_data)
 
     def score(self, X):
         """
