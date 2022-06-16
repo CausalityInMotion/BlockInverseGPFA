@@ -145,25 +145,6 @@ class TestGPFA(unittest.TestCase):
             em_max_iters=self.n_iters
             )
 
-    def test_fit_transform(self):
-        """
-        Test the fit and tranform methods
-        against the tif_transform
-        """
-        self.gpfa.fit(self.X)
-        latent_variable_orth1 = self.gpfa.transform(self.X)
-        latent_variable_orth2 = GPFA(
-            bin_size=self.bin_size, z_dim=self.z_dim,
-            em_max_iters=self.n_iters).fit_transform(self.X)
-        for i in range(len(self.X)):
-            for j in range(self.z_dim):
-                self.assertTrue(
-                    np.allclose(
-                        latent_variable_orth1[i][j],
-                        latent_variable_orth2[i][j]
-                        )
-                    )
-
     def test_infer_latents(self):
         """
         Test the GPFA mean and covariance using the equation
