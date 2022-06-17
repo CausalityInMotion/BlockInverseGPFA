@@ -245,6 +245,7 @@ class GPFA(sklearn.base.BaseEstimator):
         self.params_estimated = {}
         self.fit_info = {}
         self.transform_info = {}
+        self.train_latent_seqs = None
 
     def fit(self, X, use_cut_trials=False):
         """
@@ -276,15 +277,16 @@ class GPFA(sklearn.base.BaseEstimator):
 
             If covariance matrix of input data is rank deficient.
         """
+        X_in = X
         if use_cut_trials:
             # For compute efficiency, train on shorter segments of trials
-            X = self._cut_trials(X)
-            if len(X) == 0:
+            X_in = self._cut_trials(X_in)
+            if len(X_in) == 0:
                 warnings.warn('No segments extracted for training. Defaulting '
                               'to segLength=Inf.')
-                X = self._cut_trials(X, seg_length=np.inf)
+                X_in = self._cut_trials(X_in, seg_length=np.inf)
         # Check if training data covariance is full rank
-        X_all = np.hstack(X)
+        X_all = np.hstack(X_in)
         x_dim = X_all.shape[0]
 
         if np.linalg.matrix_rank(np.cov(X_all)) < x_dim:
@@ -294,22 +296,35 @@ class GPFA(sklearn.base.BaseEstimator):
             raise ValueError(errmesg)
 
         if self.verbose:
-            print(f'Number of training trials: {len(X)}')
+            print(f'Number of training trials: {len(X_in)}')
             print(f'Latent space dimensionality: {self.z_dim}')
             print(f'Observation dimensionality: {X_all.any(axis=1).sum()}')
 
         # The following does the heavy lifting.
-        self.params_estimated, self.fit_info = self._fitting_core(
-            X=X,
-            z_dim=self.z_dim,
-            bin_size=self.bin_size,
-            min_var_frac=self.min_var_frac,
-            em_max_iters=self.em_max_iters,
-            em_tol=self.em_tol,
-            tau_init=self.tau_init,
-            eps_init=self.eps_init,
-            freq_ll=self.freq_ll,
-            verbose=self.verbose)
+        self.params_estimated, train_latent_seqs, self.fit_info = \
+            self._fitting_core(
+                            X=X_in,
+                            z_dim=self.z_dim,
+                            bin_size=self.bin_size,
+                            min_var_frac=self.min_var_frac,
+                            em_max_iters=self.em_max_iters,
+                            em_tol=self.em_tol,
+                            tau_init=self.tau_init,
+                            eps_init=self.eps_init,
+                            freq_ll=self.freq_ll,
+                            verbose=self.verbose
+                            )
+        # If `use_cut_trials=True` re-compute the latent sequence on a full
+        # X rather than on the cut_trial
+        if use_cut_trials:
+            train_latent_seqs, _ = self._infer_latents(
+                                        X, self.params_estimated
+                                        )
+        # applying an orthonormalization on the latent variable space.
+        train_Corth, self.train_latent_seqs = self._orthonormalize(
+                                self.params_estimated, train_latent_seqs
+                                )
+        self.transform_info['train_Corth'] = train_Corth
 
         return self
 
@@ -485,7 +500,17 @@ class GPFA(sklearn.base.BaseEstimator):
                     latent variable space
                 R: numpy.ndarray of shape (#x_dim, #z_dim)
                     observation noise covariance
-
+        latent_seqs : numpy.recarray
+            a copy of the training data structure, augmented with the new
+            fields:
+            pZ_mu : numpy.ndarray of shape (#z_dim x #bins)
+                posterior mean of latent variables at each time bin
+            pZ_cov : numpy.ndarray of shape (#z_dim, #z_dim, #bins)
+                posterior covariance between latent variables at each
+                timepoint
+            pZ_covGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
+                posterior covariance over time for each latent
+                variable
         fit_info : dict
             Information of the fitting process and the parameters used there
             iteration_time : list
@@ -530,15 +555,15 @@ class GPFA(sklearn.base.BaseEstimator):
         # =====================
         print('\nFitting GPFA model...')
 
-        params_est, X, ll_cut, iter_time = self._em(
+        params_est, latent_seqs, ll, iter_time = self._em(
             params_init, X, min_var_frac=min_var_frac,
             max_iters=em_max_iters, tol=em_tol, freq_ll=freq_ll,
             verbose=verbose
             )
 
-        fit_info = {'iteration_time': iter_time, 'log_likelihoods': ll_cut}
+        fit_info = {'iteration_time': iter_time, 'log_likelihoods': ll}
 
-        return params_est, fit_info
+        return params_est, latent_seqs, fit_info
 
     def _em(self, params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
            freq_ll=5, verbose=False):
