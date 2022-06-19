@@ -219,16 +219,3 @@ class TestGPFA(unittest.TestCase):
                                 self.z_dim, self.T[0])
         # Assert
         self.assertTrue(np.allclose(k_big_inv, full_k_big_inv))
-
-    def test_orthonormalize(self):
-        """
-        Test GPFA orthonormalize function.
-        """
-        latent_seqs, _ = self.gpfa._infer_latents(
-            self.X, self.params_init
-            )
-        corth, _ = self.gpfa._orthonormalize(self.params_init, latent_seqs)
-        c_orth = linalg.orth(self.params_init['C'])
-        # Assert
-        self.assertTrue(np.allclose(c_orth, corth))
-
