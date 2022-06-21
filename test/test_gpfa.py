@@ -144,6 +144,7 @@ class TestGPFA(unittest.TestCase):
             bin_size=self.bin_size, z_dim=self.z_dim,
             em_max_iters=self.n_iters
             )
+        self.gpfa.fit(self.X)
 
     def test_infer_latents(self):
         """
@@ -224,7 +225,6 @@ class TestGPFA(unittest.TestCase):
         """
         Test GPFA orthonormalize function.
         """
-        self.gpfa.fit(self.X)
         corth = self.gpfa.params_estimated['Corth']
         c_orth = linalg.orth(self.gpfa.params_estimated['C'])
         # Assert
