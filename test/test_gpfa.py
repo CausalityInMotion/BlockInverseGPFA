@@ -224,11 +224,8 @@ class TestGPFA(unittest.TestCase):
         """
         Test GPFA orthonormalize function.
         """
-        latent_seqs, _ = self.gpfa._infer_latents(
-            self.X, self.params_init
-            )
-        corth, _ = self.gpfa._orthonormalize(self.params_init, latent_seqs)
-        c_orth = linalg.orth(self.params_init['C'])
+        self.gpfa.fit(self.X)
+        corth = self.gpfa.params_estimated['Corth']
+        c_orth = linalg.orth(self.gpfa.params_estimated['C'])
         # Assert
         self.assertTrue(np.allclose(c_orth, corth))
-
