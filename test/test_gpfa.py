@@ -219,3 +219,13 @@ class TestGPFA(unittest.TestCase):
                                 self.z_dim, self.T[0])
         # Assert
         self.assertTrue(np.allclose(k_big_inv, full_k_big_inv))
+
+    def test_orthonormalize(self):
+        """
+        Test GPFA orthonormalize function.
+        """
+        self.gpfa.fit(self.X)
+        corth = self.gpfa.params_estimated['Corth']
+        c_orth = linalg.orth(self.gpfa.params_estimated['C'])
+        # Assert
+        self.assertTrue(np.allclose(c_orth, corth))

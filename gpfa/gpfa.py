@@ -403,7 +403,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         seqs, ll = self._infer_latents(X, self.params_estimated, 
                                        get_ll=True)
-        seqs = self._orthonormalize(self.params_estimated, seqs)
+        seqs = self._orthonormalize(seqs)
         if len(returned_data) == 1:
             return seqs[returned_data[0]]
         return {i: seqs[i] for i in returned_data}, ll
@@ -423,7 +423,7 @@ class GPFA(sklearn.base.BaseEstimator):
         Returns
         -------
         log_likelihood : float
-            Log-likelihood of the given spiketrains under the fitted model.
+            Log-likelihood of the given X under the fitted model.
         """
         _, ll = self.transform(X)
         return ll
@@ -559,16 +559,18 @@ class GPFA(sklearn.base.BaseEstimator):
 
         # Orthonormalize the columns of the loading matrix `C`.
         if z_dim == 1:
-            TT = np.sqrt(np.dot(params_est['C'].T, params_est['C']))
+            self.OrthTrans = np.sqrt(np.dot(params_est['C'].T, params_est['C']))
             # Orthonormalized loading matrix
-            Lorth = np.linalg.solve(TT.T, params_est['C'].T).T
+            Corth = np.linalg.solve(self.OrthTrans.T, params_est['C'].T).T
 
         else:
-            UU, _, _ = sp.linalg.svd(params_est['C'], full_matrices=False)
+            UU, DD, VV = sp.linalg.svd(params_est['C'], full_matrices=False)
+            # TT is transform matrix
+            self.OrthTrans = np.dot(np.diag(DD), VV)
             # Orthonormalized loading matrix
-            Lorth = UU
+            Corth = UU
 
-        params_est['Corth'] = Lorth
+        params_est['Corth'] = Corth
 
         fit_info = {'iteration_time': iter_time, 'log_likelihoods': ll}
 
@@ -931,31 +933,12 @@ class GPFA(sklearn.base.BaseEstimator):
         return param_opt
 
 
-    def _orthonormalize(self, params_est, seqs):
+    def _orthonormalize(self, seqs):
         """
         Apply the corresponding linear transform to the latent variables.
 
         Parameters
         ----------
-        params_est : dict
-            First return value of extract_trajectory() on the training data set.
-            Estimated model parameters.
-            When the GPFA method is used, following parameters are contained
-            covType : {'rbf', 'tri', 'logexp'}
-                type of GP covariance
-                Currently, only 'rbf' is supported.
-            gamma : numpy.ndarray of shape (1, #z_dim)
-                related to GP timescales by 'bin_size / sqrt(gamma)'
-            eps : numpy.ndarray of shape (1, #z_dim)
-                GP noise variances
-            d : numpy.ndarray of shape (#x_dim, 1)
-                observation mean
-            C : numpy.ndarray of shape (#x_dim, #z_dim)
-                mapping between the observational space and the latent variable
-                space
-            R : numpy.ndarray of shape (#x_dim, #z_dim)
-                observation noise covariance
-
         seqs : numpy.recarray
             Contains the embedding of the training data into the latent variable
             space.
@@ -977,15 +960,7 @@ class GPFA(sklearn.base.BaseEstimator):
             `pZ_mu_orth`, the orthonormalized trajectories.
         """
         Z_all = np.hstack(seqs['pZ_mu'])
-        if self.z_dim == 1:
-            TT = np.sqrt(np.dot(params_est['C'].T, params_est['C']))
-            pZ_mu_orth = np.dot(TT, Z_all)
-        else:
-            _, DD, VV = sp.linalg.svd(params_est['C'], full_matrices=False)
-            # TT is transform matrix
-            TT = np.dot(np.diag(DD), VV)
-            pZ_mu_orth = np.dot(TT, Z_all)
-
+        pZ_mu_orth = np.dot(self.OrthTrans, Z_all)
         # add the field `pZ_mu_orth` to seq
         seqs = self._segment_by_trial(seqs, pZ_mu_orth, 'pZ_mu_orth')
 
