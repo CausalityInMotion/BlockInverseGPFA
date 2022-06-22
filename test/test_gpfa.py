@@ -145,6 +145,8 @@ class TestGPFA(unittest.TestCase):
             em_max_iters=self.n_iters
             )
         self.gpfa.fit(self.X)
+        self.results, _ = self.gpfa.predict(
+                                returned_data=['pZ_mu', 'pZ_mu_orth'])
 
     def test_infer_latents(self):
         """
@@ -221,11 +223,29 @@ class TestGPFA(unittest.TestCase):
         # Assert
         self.assertTrue(np.allclose(k_big_inv, full_k_big_inv))
 
-    def test_orthonormalize(self):
+    def test_orthonormalized_transform(self):
         """
-        Test GPFA orthonormalize function.
+        Test GPFA orthonormalization transform of the parameter `C`.
         """
         corth = self.gpfa.params_estimated['Corth']
         c_orth = linalg.orth(self.gpfa.params_estimated['C'])
         # Assert
         self.assertTrue(np.allclose(c_orth, corth))
+
+    def test_orthonormalized_latents(self):
+        """
+        Test GPFA orthonormalization functions applied in `gpfa.predict`.
+        """
+        pZ_mu = self.results['pZ_mu']
+        pZ_mu_orth = self.results['pZ_mu_orth']
+        Z_all = np.hstack(pZ_mu)
+        test_pZ_mu_orth = np.dot(self.gpfa.OrthTrans, Z_all)
+        # get the right format of test_pZ_mu_orth
+        test_seqs = self.gpfa._segment_by_trial(
+            self.gpfa.train_latent_seqs,
+            test_pZ_mu_orth,
+            'test_pZ_mu_orth'
+        )
+        # Assert
+        self.assertTrue(np.allclose(pZ_mu_orth[0],
+                                    test_seqs['test_pZ_mu_orth'][0]))

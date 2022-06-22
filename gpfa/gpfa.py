@@ -72,7 +72,7 @@ class GPFA(sklearn.base.BaseEstimator):
     to extract the trajectories. The parameters that describe the
     transformation are first extracted from the data using the `fit()` method
     of the GPFA class. Then the same data is projected into the orthonormal
-    basis using the method `predict()`.
+    basis using the method `predict(returned_data=['pZ_mu_orth'])`.
 
     In the second scenario, a single dataset is split into training and test
     datasets. Here, the parameters are estimated from the training data. Then
@@ -311,7 +311,7 @@ class GPFA(sklearn.base.BaseEstimator):
                                         )
         return self
 
-    def predict(self, X=None, orthonormalize=True, returned_data=['pZ_mu']):
+    def predict(self, X=None, returned_data=['pZ_mu']):
         """
         Obtain trajectories of in a low-dimensional latent variable space by
         inferring the posterior mean of the obtained GPFA model and applying
@@ -328,11 +328,6 @@ class GPFA(sklearn.base.BaseEstimator):
 
             Note: If X=None, the latent state estimates for the training
                 set are returned.
-
-        orthonormalize : bool, optional
-            if `orthogonalized=True`, the orthogonalized latent state estimates
-            are returned.
-            Default : True
 
         returned_data : list of str
             Set `returned_data` to a list of str of desired resultant data e.g:
@@ -385,7 +380,7 @@ class GPFA(sklearn.base.BaseEstimator):
             reflecting the trial durations in the given `observed` data.
 
         ll : float
-            data log likelihood        
+            data log likelihood
 
         Raises
         ------
@@ -403,7 +398,7 @@ class GPFA(sklearn.base.BaseEstimator):
         else:
             seqs, ll = self._infer_latents(X, self.params_estimated,
                                            get_ll=True)
-        if orthonormalized:
+        if 'pZ_mu_orth' in returned_data:
             seqs = self._orthonormalize(seqs)
         if len(returned_data) == 1:
             return seqs[returned_data[0]]
@@ -426,7 +421,7 @@ class GPFA(sklearn.base.BaseEstimator):
         log_likelihood : float
             Log-likelihood of the given X under the fitted model.
         """
-        _, ll = self.predict(X, orthonormalize=False)
+        _, ll = self.predict(X)
         return ll
 
     def _fitting_core(self, X, z_dim=3, bin_size=0.02, min_var_frac=0.01,
