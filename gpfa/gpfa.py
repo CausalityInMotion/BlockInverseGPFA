@@ -72,7 +72,7 @@ class GPFA(sklearn.base.BaseEstimator):
     to extract the trajectories. The parameters that describe the
     transformation are first extracted from the data using the `fit()` method
     of the GPFA class. Then the same data is projected into the orthonormal
-    basis using the method `predict()` if `orthonormalized=True`.
+    basis using the method `predict()`.
 
     In the second scenario, a single dataset is split into training and test
     datasets. Here, the parameters are estimated from the training data. Then
@@ -311,7 +311,7 @@ class GPFA(sklearn.base.BaseEstimator):
                                         )
         return self
 
-    def predict(self, X=None, orthonormalized=False, returned_data=['pZ_mu']):
+    def predict(self, X=None, orthonormalize=True, returned_data=['pZ_mu']):
         """
         Obtain trajectories of in a low-dimensional latent variable space by
         inferring the posterior mean of the obtained GPFA model and applying
@@ -329,10 +329,10 @@ class GPFA(sklearn.base.BaseEstimator):
             Note: If X=None, the latent state estimates for the training
                 set are returned.
 
-        orthonormalized : bool, optional
+        orthonormalize : bool, optional
             if `orthogonalized=True`, the orthogonalized latent state estimates
             are returned.
-            Default : False
+            Default : True
 
         returned_data : list of str
             Set `returned_data` to a list of str of desired resultant data e.g:
@@ -356,7 +356,7 @@ class GPFA(sklearn.base.BaseEstimator):
             `returned_data` specifies the keys by which the data dict is
             returned.
 
-            Default is ['pZ_mu_orth'].
+            Default is ['pZ_mu'].
 
         Returns
         -------
@@ -426,7 +426,7 @@ class GPFA(sklearn.base.BaseEstimator):
         log_likelihood : float
             Log-likelihood of the given X under the fitted model.
         """
-        _, ll = self.predict(X)
+        _, ll = self.predict(X, orthonormalize=False)
         return ll
 
     def _fitting_core(self, X, z_dim=3, bin_size=0.02, min_var_frac=0.01,
