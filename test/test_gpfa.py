@@ -144,6 +144,9 @@ class TestGPFA(unittest.TestCase):
             bin_size=self.bin_size, z_dim=self.z_dim,
             em_max_iters=self.n_iters
             )
+        self.gpfa.fit(self.X)
+        self.results, _ = self.gpfa.predict(
+                                returned_data=['pZ_mu', 'pZ_mu_orth'])
 
     def test_infer_latents(self):
         """
@@ -220,12 +223,21 @@ class TestGPFA(unittest.TestCase):
         # Assert
         self.assertTrue(np.allclose(k_big_inv, full_k_big_inv))
 
-    def test_orthonormalize(self):
+    def test_orthonormalized_transform(self):
         """
-        Test GPFA orthonormalize function.
+        Test GPFA orthonormalization transform of the parameter `C`.
         """
-        self.gpfa.fit(self.X)
         corth = self.gpfa.params_estimated['Corth']
         c_orth = linalg.orth(self.gpfa.params_estimated['C'])
         # Assert
         self.assertTrue(np.allclose(c_orth, corth))
+
+    def test_orthonormalized_latents(self):
+        """
+        Test GPFA orthonormalization functions applied in `gpfa.predict`.
+        """
+        pZ_mu = self.results['pZ_mu'][0]
+        pZ_mu_orth = self.results['pZ_mu_orth'][0]
+        test_pZ_mu_orth = np.dot(self.gpfa.OrthTrans, pZ_mu)
+        # Assert
+        self.assertTrue(np.allclose(pZ_mu_orth, test_pZ_mu_orth))

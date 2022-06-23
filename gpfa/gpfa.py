@@ -72,14 +72,14 @@ class GPFA(sklearn.base.BaseEstimator):
     to extract the trajectories. The parameters that describe the
     transformation are first extracted from the data using the `fit()` method
     of the GPFA class. Then the same data is projected into the orthonormal
-    basis using the method `transform()`.
+    basis using the method `predict()`.
 
     In the second scenario, a single dataset is split into training and test
     datasets. Here, the parameters are estimated from the training data. Then
     the test data is projected into the low-dimensional space previously
     obtained from the training data. This analysis is performed by executing
     first the `fit()` method on the training data, followed by the
-    `transform()` method on the test dataset.
+    `predict()` method on the test dataset.
 
     The GPFA class is compatible to the cross-validation functions of
     `sklearn.model_selection`, such that users can perform cross-validation to
@@ -150,22 +150,11 @@ class GPFA(sklearn.base.BaseEstimator):
             containing the runtime for each iteration step in the EM algorithm.
         log_likelihoods : list
             log likelihoods after each EM iteration.
-    transform_info : dict
-        Information of the transforming process. Updated at each run of the
-        transform() method.
-
-        log_likelihood : float
-            maximized likelihood of the transformed data
-        num_bins : nd.array
-            number of bins in each trial
-        Corth : (#x_dim, #z_dim) numpy.ndarray
-            mapping between the observed data space and the orthonormal
-            latent variable space
 
     Methods
     -------
     fit
-    transform
+    predict
     score
 
     Example
@@ -215,8 +204,8 @@ class GPFA(sklearn.base.BaseEstimator):
 
     >>> gpfa = GPFA(bin_size=bin_size, z_dim=2)
     >>> gpfa.fit(X)
-    >>> results = gpfa.transform(data, returned_data=['pZ_mu_orth',
-    ...                                               'pZ_mu'])
+    >>> results = gpfa.predict(data,
+    ...                        returned_data=['pZ_mu_orth', 'pZ_mu'])
     >>> pZ_mu_orth = results['pZ_mu_orth']
     >>> pZ_mu = results['pZ_mu']
 
@@ -322,7 +311,7 @@ class GPFA(sklearn.base.BaseEstimator):
                                         )
         return self
 
-    def transform(self, X, returned_data=['pZ_mu_orth']):
+    def predict(self, X=None, returned_data=['pZ_mu_orth']):
         """
         Obtain trajectories of in a low-dimensional latent variable space by
         inferring the posterior mean of the obtained GPFA model and applying
@@ -336,6 +325,9 @@ class GPFA(sklearn.base.BaseEstimator):
             #x_dim needs to be the same across elements in X, but #bins
             can be different for each observation sequence.
             Default : None
+
+            Note: If X=None, the latent state estimates for the training
+                set are returned.
 
         returned_data : list of str
             Set `returned_data` to a list of str of desired resultant data e.g:
@@ -388,7 +380,7 @@ class GPFA(sklearn.base.BaseEstimator):
             reflecting the trial durations in the given `observed` data.
 
         ll : float
-            data log likelihood        
+            data log likelihood
 
         Raises
         ------
@@ -400,12 +392,16 @@ class GPFA(sklearn.base.BaseEstimator):
         if len(invalid_keys) > 0:
             raise ValueError("'returned_data' can only have the following "
                              f"entries: {self.valid_data_names}")
-
-        seqs, ll = self._infer_latents(X, self.params_estimated, 
-                                       get_ll=True)
-        seqs = self._orthonormalize(seqs)
+        if X is None:
+            seqs = self.train_latent_seqs
+            ll = self.fit_info['log_likelihoods']
+        else:
+            seqs, ll = self._infer_latents(X, self.params_estimated,
+                                           get_ll=True)
+        if 'pZ_mu_orth' in returned_data:
+            seqs = self._orthonormalize(seqs)
         if len(returned_data) == 1:
-            return seqs[returned_data[0]]
+            return seqs[returned_data[0]], ll
         return {i: seqs[i] for i in returned_data}, ll
 
     def score(self, X):
@@ -425,7 +421,7 @@ class GPFA(sklearn.base.BaseEstimator):
         log_likelihood : float
             Log-likelihood of the given X under the fitted model.
         """
-        _, ll = self.transform(X)
+        _, ll = self.predict(X, returned_data=['pZ_mu'])
         return ll
 
     def _fitting_core(self, X, z_dim=3, bin_size=0.02, min_var_frac=0.01,
@@ -559,13 +555,13 @@ class GPFA(sklearn.base.BaseEstimator):
 
         # Orthonormalize the columns of the loading matrix `C`.
         if z_dim == 1:
+            # OrthTrans is transform matrix            
             self.OrthTrans = np.sqrt(np.dot(params_est['C'].T, params_est['C']))
             # Orthonormalized loading matrix
             Corth = np.linalg.solve(self.OrthTrans.T, params_est['C'].T).T
 
         else:
             UU, DD, VV = sp.linalg.svd(params_est['C'], full_matrices=False)
-            # TT is transform matrix
             self.OrthTrans = np.dot(np.diag(DD), VV)
             # Orthonormalized loading matrix
             Corth = UU
