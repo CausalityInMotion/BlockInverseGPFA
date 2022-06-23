@@ -421,7 +421,7 @@ class GPFA(sklearn.base.BaseEstimator):
         log_likelihood : float
             Log-likelihood of the given X under the fitted model.
         """
-        _, ll = self.predict(X, returned_data['pZ_mu'])
+        _, ll = self.predict(X, returned_data=['pZ_mu'])
         return ll
 
     def _fitting_core(self, X, z_dim=3, bin_size=0.02, min_var_frac=0.01,
