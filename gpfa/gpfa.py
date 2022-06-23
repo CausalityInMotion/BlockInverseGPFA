@@ -72,7 +72,7 @@ class GPFA(sklearn.base.BaseEstimator):
     to extract the trajectories. The parameters that describe the
     transformation are first extracted from the data using the `fit()` method
     of the GPFA class. Then the same data is projected into the orthonormal
-    basis using the method `predict(returned_data=['pZ_mu_orth'])`.
+    basis using the method `predict()`.
 
     In the second scenario, a single dataset is split into training and test
     datasets. Here, the parameters are estimated from the training data. Then
@@ -311,7 +311,7 @@ class GPFA(sklearn.base.BaseEstimator):
                                         )
         return self
 
-    def predict(self, X=None, returned_data=['pZ_mu']):
+    def predict(self, X=None, returned_data=['pZ_mu_orth']):
         """
         Obtain trajectories of in a low-dimensional latent variable space by
         inferring the posterior mean of the obtained GPFA model and applying
@@ -351,7 +351,7 @@ class GPFA(sklearn.base.BaseEstimator):
             `returned_data` specifies the keys by which the data dict is
             returned.
 
-            Default is ['pZ_mu'].
+            Default is ['pZ_mu_orth'].
 
         Returns
         -------
@@ -401,7 +401,7 @@ class GPFA(sklearn.base.BaseEstimator):
         if 'pZ_mu_orth' in returned_data:
             seqs = self._orthonormalize(seqs)
         if len(returned_data) == 1:
-            return seqs[returned_data[0]]
+            return seqs[returned_data[0]], ll
         return {i: seqs[i] for i in returned_data}, ll
 
     def score(self, X):
