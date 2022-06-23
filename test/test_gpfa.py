@@ -236,16 +236,8 @@ class TestGPFA(unittest.TestCase):
         """
         Test GPFA orthonormalization functions applied in `gpfa.predict`.
         """
-        pZ_mu = self.results['pZ_mu']
-        pZ_mu_orth = self.results['pZ_mu_orth']
-        Z_all = np.hstack(pZ_mu)
-        test_pZ_mu_orth = np.dot(self.gpfa.OrthTrans, Z_all)
-        # get the right format of test_pZ_mu_orth
-        test_seqs = self.gpfa._segment_by_trial(
-            self.gpfa.train_latent_seqs,
-            test_pZ_mu_orth,
-            'test_pZ_mu_orth'
-        )
+        pZ_mu = self.results['pZ_mu'][0]
+        pZ_mu_orth = self.results['pZ_mu_orth'][0]
+        test_pZ_mu_orth = np.dot(self.gpfa.OrthTrans, pZ_mu)
         # Assert
-        self.assertTrue(np.allclose(pZ_mu_orth[0],
-                                    test_seqs['test_pZ_mu_orth'][0]))
+        self.assertTrue(np.allclose(pZ_mu_orth, test_pZ_mu_orth))

@@ -204,8 +204,8 @@ class GPFA(sklearn.base.BaseEstimator):
 
     >>> gpfa = GPFA(bin_size=bin_size, z_dim=2)
     >>> gpfa.fit(X)
-    >>> results = gpfa.predict(data, orthonormalized=True,
-    ...                          returned_data=['pZ_mu_orth', 'pZ_mu'])
+    >>> results = gpfa.predict(data,
+    ...                        returned_data=['pZ_mu_orth', 'pZ_mu'])
     >>> pZ_mu_orth = results['pZ_mu_orth']
     >>> pZ_mu = results['pZ_mu']
 
