@@ -8,7 +8,6 @@ GPFA Unittests.
 import unittest
 import numpy as np
 from scipy import linalg
-from sklearn.decomposition import FactorAnalysis
 from gpfa import GPFA
 
 
@@ -23,8 +22,6 @@ class TestGPFA(unittest.TestCase):
         """
         np.random.seed(0)
         self.bin_size = 0.02  # [s]
-        self.tau_init = 0.1  # [s]
-        self.eps_init = 1.0E-3
         self.n_iters = 10
         self.z_dim = 2
         self.n_neurons = 2  # per rate therefore, there are 4 neurons
@@ -111,35 +108,6 @@ class TestGPFA(unittest.TestCase):
         self.T = np.array([X_n.shape[1] for X_n in self.X])
         self.t_half = int(np.ceil(self.T[0] / 2.0))
 
-        # Initialize state model parameters
-        self.params_init = {}
-        self.params_init['covType'] = 'rbf'
-        # GP timescale
-        # Assume binWidth is the time step size.
-        time_step = (self.bin_size / self.tau_init) ** 2
-        self.params_init['gamma'] = time_step * np.ones(self.z_dim)
-        # GP noise variance
-        self.params_init['eps'] = self.eps_init * np.ones(self.z_dim)
-
-        # Initialize observation model parameters using factor analysis
-        X_all = np.hstack([self.X[0]])
-        f_a = FactorAnalysis(
-            n_components=self.z_dim, copy=True,
-            noise_variance_init=np.diag(np.cov(X_all, bias=True))
-                            )
-        # fit factor analysis
-        f_a.fit(X_all.T)
-        self.params_init['d'] = X_all.mean(axis=1)
-        self.params_init['C'] = f_a.components_.T
-        self.params_init['R'] = np.diag(f_a.noise_variance_)
-
-        # Define parameter constraints
-        self.params_init['notes'] = {
-            'learnKernelParams': True,
-            'learnGPNoise': False,
-            'RforceDiagonal': True,
-        }
-
         self.gpfa = GPFA(
             bin_size=self.bin_size, z_dim=self.z_dim,
             em_max_iters=self.n_iters
@@ -161,18 +129,16 @@ class TestGPFA(unittest.TestCase):
 
         for n, t in enumerate(self.T):
             # get the kernal as defined in GPFA
-            _, k_big_inv, _ = self.gpfa._make_k_big(
-                                                    params=self.params_init,
-                                                    n_timesteps=t)
-            rinv = np.diag(1.0 / np.diag(self.params_init['R']))
-            c_rinv = self.params_init['C'].T.dot(rinv)
+            _, k_big_inv, _ = self.gpfa._make_k_big(n_timesteps=t)
+            rinv = np.diag(1.0 / np.diag(self.gpfa.params['R']))
+            c_rinv = self.gpfa.params['C'].T.dot(rinv)
 
             # C'R_invC
-            c_rinv_c = c_rinv.dot(self.params_init['C'])
+            c_rinv_c = c_rinv.dot(self.gpfa.params['C'])
 
             # subtract mean from activities (y - d)
             dif = np.hstack([self.X[n]]) - \
-                self.params_init['d'][:, np.newaxis]
+                self.gpfa.params['d'][:, np.newaxis]
             # C'R_inv * (y - d)
             term1_mat = c_rinv.dot(dif).reshape(
                                         (self.z_dim * t, -1), order='F')
@@ -195,9 +161,7 @@ class TestGPFA(unittest.TestCase):
 
             test_latent_seqs[n]['pZ_cov'] = cov
         # get mean and covariance as implemented by GPFA
-        latent_seqs, _ = self.gpfa._infer_latents(
-                                        self.X, self.params_init
-            )
+        latent_seqs, _ = self.gpfa._infer_latents(self.X)
         # Assert
         self.assertTrue(np.allclose(
                 latent_seqs['pZ_mu'][0],
@@ -213,10 +177,7 @@ class TestGPFA(unittest.TestCase):
         half with results from the top half.
         Test if fill_persymm returns an expected filled matrix
         """
-        _, k_big_inv, _ = self.gpfa._make_k_big(
-                                                self.params_init,
-                                                self.T[0]
-                                                )
+        _, k_big_inv, _ = self.gpfa._make_k_big(self.T[0])
         full_k_big_inv = self.gpfa._fill_persymm(
                                 k_big_inv[:(self.z_dim*self.t_half), :],
                                 self.z_dim, self.T[0])
@@ -227,8 +188,8 @@ class TestGPFA(unittest.TestCase):
         """
         Test GPFA orthonormalization transform of the parameter `C`.
         """
-        corth = self.gpfa.params_estimated['Corth']
-        c_orth = linalg.orth(self.gpfa.params_estimated['C'])
+        corth = self.gpfa.params['Corth']
+        c_orth = linalg.orth(self.gpfa.params['C'])
         # Assert
         self.assertTrue(np.allclose(c_orth, corth))
 

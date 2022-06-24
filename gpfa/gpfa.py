@@ -22,11 +22,11 @@ Gaussian process are estimated from the data using an expectation-maximization
 time-scales and variances of the Gaussian process, using all the trials
 provided as input
 
-2) projection of single trials in the low dimensional space
+2) projection of single trials in the low dimensional space and perform
+orthonormalization of the matrix C
 
-3) orthonormalization of the matrix C and the corresponding subspace, for
-visualization purposes
-
+3) prediction and orthonormalization of the corresponding subspace,
+for visualization purposes
 
 
 Original code
@@ -125,7 +125,7 @@ class GPFA(sklearn.base.BaseEstimator):
     valid_data_names : tuple of str
         Names of the data contained in the resultant data structure, used to
         check the validity of users' request
-    params_estimated : dict
+    params : dict
         Estimated model parameters. Updated at each run of the fit() method.
 
         covType : str
@@ -150,6 +150,17 @@ class GPFA(sklearn.base.BaseEstimator):
             containing the runtime for each iteration step in the EM algorithm.
         log_likelihoods : list
             log likelihoods after each EM iteration.
+    train_latent_seqs : numpy.recarray
+        a copy of the training data structure, augmented with the new
+        fields:
+        pZ_mu : numpy.ndarray of shape (#z_dim x #bins)
+            posterior mean of latent variables at each time bin
+        pZ_cov : numpy.ndarray of shape (#z_dim, #z_dim, #bins)
+            posterior covariance between latent variables at each
+            timepoint
+        pZ_covGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
+            posterior covariance over time for each latent
+            variable
 
     Methods
     -------
@@ -211,9 +222,9 @@ class GPFA(sklearn.base.BaseEstimator):
 
     """
 
-    def __init__(self, bin_size=0.02, z_dim=3,
-                 min_var_frac=0.01, tau_init=0.1, eps_init=1.0E-3,
-                 em_tol=1.0E-8, em_max_iters=500, freq_ll=5, verbose=False):
+    def __init__(self, bin_size=0.02, z_dim=3, min_var_frac=0.01,
+                 tau_init=0.1, eps_init=1.0E-3, em_tol=1.0E-8,
+                 em_max_iters=500, freq_ll=5, verbose=False):
         self.bin_size = bin_size
         self.z_dim = z_dim
         self.min_var_frac = min_var_frac
@@ -231,14 +242,15 @@ class GPFA(sklearn.base.BaseEstimator):
         self.verbose = verbose
 
         # will be updated later
-        self.params_estimated = {}
+        self.params = {}
         self.fit_info = {}
         self.train_latent_seqs = None
 
     def fit(self, X, use_cut_trials=False):
         """
-        Fit the model with the given training data.
-        And applying an orthonormalization transform to the loading matrxi.
+        Fit the model with the given training data. This ceates and adjusts
+        all the attributes by EM algorithm. And applies an orthonormalization
+        transform to the loading matrxi.
 
         Parameters
         ----------
@@ -290,25 +302,12 @@ class GPFA(sklearn.base.BaseEstimator):
             print(f'Observation dimensionality: {X_all.any(axis=1).sum()}')
 
         # The following does the heavy lifting.
-        self.params_estimated, self.train_latent_seqs, self.fit_info = \
-            self._fitting_core(
-                            X=X_in,
-                            z_dim=self.z_dim,
-                            bin_size=self.bin_size,
-                            min_var_frac=self.min_var_frac,
-                            em_max_iters=self.em_max_iters,
-                            em_tol=self.em_tol,
-                            tau_init=self.tau_init,
-                            eps_init=self.eps_init,
-                            freq_ll=self.freq_ll,
-                            verbose=self.verbose
-                            )
+        self.train_latent_seqs = self._fitting_core(X=X_in)
         # If `use_cut_trials=True` re-compute the latent sequence on a full
         # X rather than on the cut_trial
         if use_cut_trials:
-            self.train_latent_seqs, _ = self._infer_latents(
-                                        X, self.params_estimated
-                                        )
+            self.train_latent_seqs, _ = self._infer_latents(X)
+
         return self
 
     def predict(self, X=None, returned_data=['pZ_mu_orth']):
@@ -379,8 +378,8 @@ class GPFA(sklearn.base.BaseEstimator):
             Note that the num. of bins (#bins) can vary across trials,
             reflecting the trial durations in the given `observed` data.
 
-        ll : float
-            data log likelihood
+        lls : float
+            data log likelihoods
 
         Raises
         ------
@@ -394,15 +393,14 @@ class GPFA(sklearn.base.BaseEstimator):
                              f"entries: {self.valid_data_names}")
         if X is None:
             seqs = self.train_latent_seqs
-            ll = self.fit_info['log_likelihoods']
+            lls = self.fit_info['log_likelihoods']
         else:
-            seqs, ll = self._infer_latents(X, self.params_estimated,
-                                           get_ll=True)
+            seqs, lls = self._infer_latents(X, get_ll=True)
         if 'pZ_mu_orth' in returned_data:
             seqs = self._orthonormalize(seqs)
         if len(returned_data) == 1:
-            return seqs[returned_data[0]], ll
-        return {i: seqs[i] for i in returned_data}, ll
+            return seqs[returned_data[0]], lls
+        return {i: seqs[i] for i in returned_data}, lls
 
     def score(self, X):
         """
@@ -424,9 +422,7 @@ class GPFA(sklearn.base.BaseEstimator):
         _, ll = self.predict(X, returned_data=['pZ_mu'])
         return ll
 
-    def _fitting_core(self, X, z_dim=3, bin_size=0.02, min_var_frac=0.01,
-                      em_tol=1.0E-8, em_max_iters=500, tau_init=0.1,
-                      eps_init=1.0E-3, freq_ll=5, verbose=False):
+    def _fitting_core(self, X):
         """
         Fit the GPFA model with the given training data.
 
@@ -438,60 +434,9 @@ class GPFA(sklearn.base.BaseEstimator):
             #x_dim needs to be the same across elements in X, but #bins
             can be different for each observation sequence.
             Default : None
-        z_dim : int, optional
-            latent state dimensionality
-            Default: 3
-        bin_size : float, optional
-            observed data bin width in sec
-            Default: 0.02 [s]
-        min_var_frac : float, optional
-            fraction of overall data variance for each observed dimension to
-            set as the private variance floor.  This is used to combat
-            Heywood cases, where ML parameter learning returns one or more
-            zero private variances.
-            Default: 0.01
-            (See Martin & McDonald, Psychometrika, Dec 1975.)
-        em_tol : float, optional
-            stopping criterion for EM
-            Default: 1e-8
-        em_max_iters : int, optional
-            number of EM iterations to run
-            Default: 500
-        tau_init : float, optional
-            GP timescale initialization in sec
-            Default: 0.1 [s]
-        eps_init : float, optional
-            GP noise variance initialization
-            Default: 1e-3
-        freq_ll : int, optional
-            data likelihood is computed at every freq_ll EM iterations.
-            freq_ll = 1 means that data likelihood is computed at every
-            iteration.
-            Default: 5
-        verbose : bool, optional
-            specifies whether to display status messages
-            Default: False
 
         Returns
         -------
-        parameter_estimates : dict
-            Estimated model parameters.
-            When the GPFA method is used, following parameters are contained
-                covType: {'rbf', 'tri', 'logexp'}
-                    type of GP covariance
-                gamma: numpy.ndarray of shape (1, #z_dim)
-                    related to GP timescales by 'bin_size / sqrt(gamma)'
-                eps: numpy.ndarray of shape (1, #z_dim)
-                    GP noise variances
-                d: numpy.ndarray of shape (#x_dim, 1)
-                    observation mean
-                C: numpy.ndarray of shape (#x_dim, #z_dim)
-                    mapping between the observed data space and the
-                    latent variable space
-                R: numpy.ndarray of shape (#x_dim, #z_dim)
-                    observation noise covariance
-                Corth: numpy.ndarray (z_dim, x_dim)
-                    Orthonormalized loading matrix
         latent_seqs : numpy.recarray
             a copy of the training data structure, augmented with the new
             fields:
@@ -503,22 +448,16 @@ class GPFA(sklearn.base.BaseEstimator):
             pZ_covGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
                 posterior covariance over time for each latent
                 variable
-        fit_info : dict
-            Information of the fitting process and the parameters used there
-            iteration_time : list
-                containing the runtime for each iteration step in the EM
-                algorithm.
         """
         # ==================================
         # Initialize state model parameters
         # ==================================
-        params_init = {}
-        params_init['covType'] = 'rbf'
+        self.params['covType'] = 'rbf'
         # GP timescale
         # Assume binWidth is the time step size.
-        params_init['gamma'] = (bin_size / tau_init) ** 2 * np.ones(z_dim)
+        self.params['gamma'] = (self.bin_size / self.tau_init) ** 2 * np.ones(self.z_dim)
         # GP noise variance
-        params_init['eps'] = eps_init * np.ones(z_dim)
+        self.params['eps'] = self.eps_init * np.ones(self.z_dim)
 
         # ========================================
         # Initialize observation model parameters
@@ -527,16 +466,16 @@ class GPFA(sklearn.base.BaseEstimator):
 
         X_all = np.hstack(X)
         fa = FactorAnalysis(
-                        n_components=z_dim, copy=True,
+                        n_components=self.z_dim, copy=True,
                         noise_variance_init=np.diag(np.cov(X_all, bias=True))
                         )
         fa.fit(X_all.T)
-        params_init['d'] = X_all.mean(axis=1)
-        params_init['C'] = fa.components_.T
-        params_init['R'] = np.diag(fa.noise_variance_)
+        self.params['d'] = X_all.mean(axis=1)
+        self.params['C'] = fa.components_.T
+        self.params['R'] = np.diag(fa.noise_variance_)
 
         # Define parameter constraints
-        params_init['notes'] = {
+        self.params['notes'] = {
             'learnKernelParams': True,
             'learnGPNoise': False,
             'RforceDiagonal': True,
@@ -547,88 +486,45 @@ class GPFA(sklearn.base.BaseEstimator):
         # =====================
         print('\nFitting GPFA model...')
 
-        params_est, latent_seqs, ll, iter_time = self._em(
-            params_init, X, min_var_frac=min_var_frac,
-            max_iters=em_max_iters, tol=em_tol, freq_ll=freq_ll,
-            verbose=verbose
-            )
+        latent_seqs, lls, iter_time = self._em(X)
 
         # Orthonormalize the columns of the loading matrix `C`.
-        if z_dim == 1:
+        if self.z_dim == 1:
             # OrthTrans is transform matrix            
-            self.OrthTrans = np.sqrt(np.dot(params_est['C'].T, params_est['C']))
+            self.OrthTrans = np.sqrt(np.dot(self.params['C'].T, self.params['C']))
             # Orthonormalized loading matrix
-            Corth = np.linalg.solve(self.OrthTrans.T, params_est['C'].T).T
+            Corth = np.linalg.solve(self.OrthTrans.T, self.params['C'].T).T
 
         else:
-            UU, DD, VV = sp.linalg.svd(params_est['C'], full_matrices=False)
+            UU, DD, VV = sp.linalg.svd(self.params['C'], full_matrices=False)
             self.OrthTrans = np.dot(np.diag(DD), VV)
             # Orthonormalized loading matrix
             Corth = UU
 
-        params_est['Corth'] = Corth
+        self.params['Corth'] = Corth
 
-        fit_info = {'iteration_time': iter_time, 'log_likelihoods': ll}
+        self.fit_info = {'iteration_time': iter_time, 'log_likelihoods': lls}
 
-        return params_est, latent_seqs, fit_info
+        return latent_seqs
 
-    def _em(self, params_init, X, max_iters=500, tol=1.0E-8, min_var_frac=0.01,
-           freq_ll=5, verbose=False):
+    def _em(self, X):
         """
         Fits GPFA model parameters using expectation-maximization (EM)
         algorithm.
 
         Parameters
         ----------
-        params_init : dict
-            GPFA model parameters at which EM algorithm is initialized
-            covType : {'rbf', 'tri', 'logexp'}
-                type of GP covariance
-            gamma : numpy.ndarray of shape (1, #z_dim)
-                related to GP timescales by
-                'bin_size / sqrt(gamma)'
-            eps : numpy.ndarray of shape (1, #z_dim)
-                GP noise variances
-            d : numpy.ndarray of shape (#x_dim, 1)
-                observation mean
-            C : numpy.ndarray of shape (#x_dim, #z_dim)
-                mapping between the observation data space and the
-                latent variable space
-            R : numpy.ndarray of shape (#x_dim, #z_dim)
-                observation noise covariance
         X   : an array-like of observation sequences, one per trial.
             Each element in X is a matrix of size #x_dim x #bins,
             containing an observation sequence. The input dimensionality
             #x_dim needs to be the same across elements in X, but #bins
             can be different for each observation sequence.
             Default : None
-        max_iters : int, optional
-            number of EM iterations to run
-            Default: 500
-        tol : float, optional
-            stopping criterion for EM
-            Default: 1e-8
-        min_var_frac : float, optional
-            fraction of overall data variance for each observed dimension to
-            set as the private variance floor.  This is used to combat Heywood
-            cases, where ML parameter learning returns one or more zero
-            private variances.
-            Default: 0.01
-            (See Martin & McDonald, Psychometrika, Dec 1975.)
-        freq_ll : int, optional
-            data likelihood is computed at every freq_ll EM iterations.
-            freq_ll = 1 means that data likelihood is computed at every
-            iteration.
-            Default: 5
-        verbose : bool, optional
-            specifies whether to display status messages
-            Default: False
 
         Returns
         -------
-        params_est : dict
-            GPFA model parameter estimates, returned by EM algorithm (same
-            format as params_init)
+        params : dict
+            GPFA model parameter estimates, returned by EM algorithm
         latent_seqs : numpy.recarray
             a copy of the training data structure, augmented with the new
             fields:
@@ -640,35 +536,33 @@ class GPFA(sklearn.base.BaseEstimator):
             pZ_covGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
                 posterior covariance over time for each latent
                 variable
-        ll : list
+        lls : list
             list of log likelihoods after each EM iteration
         iter_time : list
             lisf of computation times (in seconds) for each EM iteration
         """
-        params = params_init
         T = np.array([X_n.shape[1] for X_n in X])
-        _, z_dim = params['C'].shape
         lls = []
         ll_old = ll_base = ll = 0.0
         iter_time = []
-        var_floor = min_var_frac * np.diag(np.cov(np.hstack(X)))
+        var_floor = self.min_var_frac * np.diag(np.cov(np.hstack(X)))
 
         # Loop once for each iteration of EM algorithm
-        for iter_id in trange(1, max_iters + 1, desc='EM iteration',
-                              disable=not verbose):
-            if verbose:
+        for iter_id in trange(1, self.em_max_iters + 1, desc='EM iteration',
+                              disable=not self.verbose):
+            if self.verbose:
                 print()
             tic = time.time()
-            get_ll = (np.fmod(iter_id, freq_ll) == 0) or (iter_id <= 2)
+            get_ll = (np.fmod(iter_id, self.freq_ll) == 0) or (iter_id <= 2)
 
             # ==== E STEP =====
             if not np.isnan(ll):
                 ll_old = ll
-            latent_seqs, ll = self._infer_latents(X, params, get_ll=get_ll)
+            latent_seqs, ll = self._infer_latents(X, get_ll=get_ll)
             lls.append(ll)
 
             # ==== M STEP ====
-            sum_p_auto = np.zeros((z_dim, z_dim))
+            sum_p_auto = np.zeros((self.z_dim, self.z_dim))
             for seq_latent in latent_seqs:
                 sum_p_auto += seq_latent['pZ_cov'].sum(axis=2) \
                     + seq_latent['pZ_mu'].dot(
@@ -685,16 +579,16 @@ class GPFA(sklearn.base.BaseEstimator):
             # x_dim x (z_dim+1)
             cd = np.linalg.solve(term.T, np.hstack([sum_XZtrans, sum_Xall]).T).T
 
-            params['C'] = cd[:, :z_dim]
-            params['d'] = cd[:, -1]
+            self.params['C'] = cd[:, :self.z_dim]
+            self.params['d'] = cd[:, -1]
 
             # yCent must be based on the new d
             # yCent = bsxfun(@minus, [seq.y], currentParams.d);
             # R = (yCent * yCent' - (yCent * [seq.Z_all]') * \
             #     currentParams.C') / sum(T);
-            c = params['C']
-            d = params['d'][:, np.newaxis]
-            if params['notes']['RforceDiagonal']:
+            c = self.params['C']
+            d = self.params['d'][:, np.newaxis]
+            if self.params['notes']['RforceDiagonal']:
                 sum_XXtrans = (X_all * X_all).sum(axis=1)[:, np.newaxis]
                 xd = sum_Xall * d
                 term = ((sum_XZtrans - d.dot(sum_Zall.T)) * c).sum(axis=1)
@@ -703,18 +597,18 @@ class GPFA(sklearn.base.BaseEstimator):
 
                 # Set minimum private variance
                 r = np.maximum(var_floor, r)
-                params['R'] = np.diag(r[:, 0])
+                self.params['R'] = np.diag(r[:, 0])
             else:
                 sum_XXtrans = X_all.dot(X_all.T)
                 xd = sum_Xall.dot(d.T)
                 term = (sum_XZtrans - d.dot(sum_Zall.T)).dot(c.T)
                 r = d.dot(d.T) + (sum_XXtrans - xd - xd.T - term) / T.sum()
 
-                params['R'] = (r + r.T) / 2  # ensure symmetry
+                self.params['R'] = (r + r.T) / 2  # ensure symmetry
 
-            if params['notes']['learnKernelParams']:
-                res = self._learn_gp_params(latent_seqs, params, verbose=verbose)
-                params['gamma'] = res['gamma']
+            if self.params['notes']['learnKernelParams']:
+                res = self._learn_gp_params(latent_seqs)
+                self.params['gamma'] = res['gamma']
 
             t_end = time.time() - tic
             iter_time.append(t_end)
@@ -722,23 +616,23 @@ class GPFA(sklearn.base.BaseEstimator):
             # Verify that likelihood is growing monotonically
             if iter_id <= 2:
                 ll_base = ll
-            elif verbose and ll < ll_old:
+            elif self.verbose and ll < ll_old:
                 print('\nError: Data likelihood has decreased ',
                     'from {0} to {1}'.format(ll_old, ll))
-            elif (ll - ll_base) < (1 + tol) * (ll_old - ll_base):
+            elif (ll - ll_base) < (1 + self.em_tol) * (ll_old - ll_base):
                 break
 
-        if len(lls) < max_iters:
+        if len(lls) < self.em_max_iters:
             print('Fitting has converged after {0} EM iterations.)'.format(
                 len(lls)))
 
-        if np.any(np.diag(params['R']) == var_floor):
+        if np.any(np.diag(self.params['R']) == var_floor):
             warnings.warn('Private variance floor used for one or more observed '
                         'dimensions in GPFA.')
 
-        return params, latent_seqs, lls, iter_time
+        return latent_seqs, lls, iter_time
 
-    def _infer_latents(self, X, params, get_ll=True):
+    def _infer_latents(self, X, get_ll=True):
         """
         Extracts latent trajectories from observed data
         given GPFA model parameters.
@@ -748,18 +642,6 @@ class GPFA(sklearn.base.BaseEstimator):
         X : numpy.ndarray
             input data structure, whose n-th element (corresponding to the n-th
             experimental trial) of shape (#x_dim, #bins)
-        params : dict
-            GPFA model parameters whe the following fields:
-            C : numpy.ndarray
-                FA factor loadings matrix
-            d : numpy.ndarray
-                FA mean vector
-            R : numpy.ndarray
-                FA noise covariance matrix
-            gamma : numpy.ndarray
-                GP timescale
-            eps : numpy.ndarray
-                GP noise variance
         get_ll : bool, optional
             specifies whether to compute data log likelihood (default: True)
 
@@ -779,7 +661,7 @@ class GPFA(sklearn.base.BaseEstimator):
         ll : float
             data log likelihood, numpy.nan is returned when `get_ll` is set False
         """
-        x_dim, z_dim = params['C'].shape
+        x_dim = self.params['C'].shape[0]
 
         # copy the contents of the input data structure to output structure
         X_out = np.empty(len(X), dtype=[('X', object)])
@@ -794,16 +676,16 @@ class GPFA(sklearn.base.BaseEstimator):
             latent_seqs[dtype_name] = X_out[dtype_name]
 
         # Precomputations
-        if params['notes']['RforceDiagonal']:
-            rinv = np.diag(1.0 / np.diag(params['R']))
-            logdet_r = (np.log(np.diag(params['R']))).sum()
+        if self.params['notes']['RforceDiagonal']:
+            rinv = np.diag(1.0 / np.diag(self.params['R']))
+            logdet_r = (np.log(np.diag(self.params['R']))).sum()
         else:
-            rinv = linalg.inv(params['R'])
+            rinv = linalg.inv(self.params['R'])
             rinv = (rinv + rinv.T) / 2  # ensure symmetry
-            logdet_r = fast_logdet(params['R'])
+            logdet_r = fast_logdet(self.params['R'])
 
-        c_rinv = params['C'].T.dot(rinv)
-        c_rinv_c = c_rinv.dot(params['C'])
+        c_rinv = self.params['C'].T.dot(rinv)
+        c_rinv_c = c_rinv.dot(self.params['C'])
 
         t_all = [X_n.shape[1] for X_n in X]
         t_uniq = np.unique(t_all)
@@ -814,51 +696,51 @@ class GPFA(sklearn.base.BaseEstimator):
         # - For each element of Tu, find all trials with that length.
         # - Do inference and LL computation for all those trials together.
         for t in t_uniq:
-            k_big, k_big_inv, logdet_k_big = self._make_k_big(params, t)
+            k_big, k_big_inv, logdet_k_big = self._make_k_big(t)
             k_big = sparse.csr_matrix(k_big)
 
             blah = [c_rinv_c for _ in range(t)]
             c_rinv_c_big = linalg.block_diag(*blah)  # (x_dim*T) x (x_dim*T)
-            minv, logdet_m = self._inv_persymm(k_big_inv + c_rinv_c_big, z_dim)
+            minv, logdet_m = self._inv_persymm(k_big_inv + c_rinv_c_big, self.z_dim)
 
             # Note that posterior covariance does not depend on observations,
             # so can compute once for all trials with same T.
             # x_dim x x_dim posterior covariance for each timepoint
-            vsm = np.full((z_dim, z_dim, t), np.nan)
-            idx = np.arange(0, z_dim * t + 1, z_dim)
+            vsm = np.full((self.z_dim, self.z_dim, t), np.nan)
+            idx = np.arange(0, self.z_dim * t + 1, self.z_dim)
             for i in range(t):
                 vsm[:, :, i] = minv[idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
 
             # T x T posterior covariance for each GP
-            vsm_gp = np.full((t, t, z_dim), np.nan)
-            for i in range(z_dim):
-                vsm_gp[:, :, i] = minv[i::z_dim, i::z_dim]
+            vsm_gp = np.full((t, t, self.z_dim), np.nan)
+            for i in range(self.z_dim):
+                vsm_gp[:, :, i] = minv[i::self.z_dim, i::self.z_dim]
 
             # Process all trials with length T
             n_list = np.where(t_all == t)[0]
             # dif is x_dim x sum(T)
-            dif = np.hstack(latent_seqs[n_list]['X']) - params['d'][:, np.newaxis]
+            dif = np.hstack(latent_seqs[n_list]['X']) - self.params['d'][:, np.newaxis]
             # term1Mat is (z_dim*T) x length(nList)
-            term1_mat = c_rinv.dot(dif).reshape((z_dim * t, -1), order='F')
+            term1_mat = c_rinv.dot(dif).reshape((self.z_dim * t, -1), order='F')
 
             # Compute blkProd = CRinvC_big * invM efficiently
             # blkProd is block persymmetric, so just compute top half
             t_half = int(np.ceil(t / 2.0))
-            blk_prod = np.zeros((z_dim * t_half, z_dim * t))
-            idx = range(0, z_dim * t_half + 1, z_dim)
+            blk_prod = np.zeros((self.z_dim * t_half, self.z_dim * t))
+            idx = range(0, self.z_dim * t_half + 1, self.z_dim)
             for i in range(t_half):
                 blk_prod[idx[i]:idx[i + 1], :] = c_rinv_c.dot(
                     minv[idx[i]:idx[i + 1], :])
-            blk_prod = k_big[:z_dim * t_half, :].dot(
-                self._fill_persymm(np.eye(z_dim * t_half, z_dim * t) -
-                                    blk_prod, z_dim, t))
+            blk_prod = k_big[:self.z_dim * t_half, :].dot(
+                self._fill_persymm(np.eye(self.z_dim * t_half, self.z_dim * t) -
+                                    blk_prod, self.z_dim, t))
             # latent_variable Matrix (Z_mat) is (z_dim*T) x length(nList)
             Z_mat = self._fill_persymm(
-                blk_prod, z_dim, t).dot(term1_mat)
+                blk_prod, self.z_dim, t).dot(term1_mat)
 
             for i, n in enumerate(n_list):
                 latent_seqs[n]['pZ_mu'] = \
-                    Z_mat[:, i].reshape((z_dim, t), order='F')
+                    Z_mat[:, i].reshape((self.z_dim, t), order='F')
                 latent_seqs[n]['pZ_cov'] = vsm
                 latent_seqs[n]['pZ_covGP'] = vsm_gp
 
@@ -877,18 +759,13 @@ class GPFA(sklearn.base.BaseEstimator):
         return latent_seqs, ll
 
 
-    def _learn_gp_params(self, latent_seqs, params, verbose=False):
+    def _learn_gp_params(self, latent_seqs):
         """Updates parameters of GP state model, given trajectories.
 
         Parameters
         ----------
         latent_seqs : numpy.recarray
             data structure containing trajectories;
-        params : dict
-            current GP state model parameters, which gives starting point
-            for gradient optimization;
-        verbose : bool, optional
-            specifies whether to display status messages (default: False)
 
         Returns
         -------
@@ -902,28 +779,27 @@ class GPFA(sklearn.base.BaseEstimator):
             If `params['notes']['learnGPNoise']` set to True.
 
         """
-        if params['covType'] != 'rbf':
+        if self.params['covType'] != 'rbf':
             raise ValueError("Only 'rbf' GP covariance type is supported.")
-        if params['notes']['learnGPNoise']:
+        if self.params['notes']['learnGPNoise']:
             raise ValueError("learnGPNoise is not supported.")
         param_name = 'gamma'
 
-        param_init = params[param_name]
-        param_opt = {param_name: np.empty_like(param_init)}
+        init_gamma = self.params[param_name]
+        param_opt = {param_name: np.empty_like(init_gamma)}
 
-        z_dim = param_init.shape[-1]
-        precomp = self._make_precomp(latent_seqs, z_dim)
+        precomp = self._make_precomp(latent_seqs)
 
         # Loop once for each state dimension (each GP)
-        for i in range(z_dim):
-            const = {'eps': params['eps'][i]}
-            initp = np.log(param_init[i])
-            res_opt = optimize.minimize(self._grad_betgam, initp,
+        for i in range(self.z_dim):
+            const = {'eps': self.params['eps'][i]}
+            initg = np.log(init_gamma[i])
+            res_opt = optimize.minimize(self._grad_betgam, initg,
                                         args=(precomp[i], const),
                                         method='L-BFGS-B', jac=True)
             param_opt['gamma'][i] = np.exp(res_opt.x)
 
-            if verbose:
+            if self.verbose:
                 print(f'\n Converged p; z_dim:{i}, p:{res_opt.x}')
 
         return param_opt
@@ -972,9 +848,9 @@ class GPFA(sklearn.base.BaseEstimator):
         Parameters
         ----------
         X_in : an array-like of observation sequences, one per trial.
-            Each element in X is a matrix of size #x_dim x #bins,
+            Each element in X_in is a matrix of size #x_dim x #bins,
             containing an observation sequence. The input dimensionality
-            #x_dim needs to be the same across elements in X, but #bins
+            #x_dim needs to be the same across elements in X_in, but #bins
             can be different for each observation sequence.
 
         seg_length : int
@@ -1039,7 +915,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return X_out
 
-    def _make_k_big(self, params, n_timesteps):
+    def _make_k_big(self, n_timesteps):
         """
         Constructs full GP covariance matrix across all state dimensions and
         timesteps.
@@ -1069,23 +945,21 @@ class GPFA(sklearn.base.BaseEstimator):
             If `params['covType'] != 'rbf'`.
 
         """
-        if params['covType'] != 'rbf':
+        if self.params['covType'] != 'rbf':
             raise ValueError("Only 'rbf' GP covariance type is supported.")
 
-        z_dim = params['C'].shape[1]
-
-        K_big = np.zeros((z_dim * n_timesteps, z_dim * n_timesteps))
-        K_big_inv = np.zeros((z_dim * n_timesteps, z_dim * n_timesteps))
+        K_big = np.zeros((self.z_dim * n_timesteps, self.z_dim * n_timesteps))
+        K_big_inv = np.zeros((self.z_dim * n_timesteps, self.z_dim * n_timesteps))
         Tdif = np.tile(np.arange(0, n_timesteps), (n_timesteps, 1)).T \
             - np.tile(np.arange(0, n_timesteps), (n_timesteps, 1))
         logdet_K_big = 0
 
-        for i in range(z_dim):
-            K = (1 - params['eps'][i]) * np.exp(-params['gamma'][i] / 2 *
+        for i in range(self.z_dim):
+            K = (1 - self.params['eps'][i]) * np.exp(-self.params['gamma'][i] / 2 *
                                                 Tdif ** 2) \
-                + params['eps'][i] * np.eye(n_timesteps)
-            K_big[i::z_dim, i::z_dim] = K
-            K_big_inv[i::z_dim, i::z_dim] = np.linalg.inv(K)
+                + self.params['eps'][i] * np.eye(n_timesteps)
+            K_big[i::self.z_dim, i::self.z_dim] = K
+            K_big_inv[i::self.z_dim, i::self.z_dim] = np.linalg.inv(K)
             logdet_K = fast_logdet(K)
 
             logdet_K_big = logdet_K_big + logdet_K
@@ -1192,7 +1066,7 @@ class GPFA(sklearn.base.BaseEstimator):
         return Pout
 
 
-    def _make_precomp(self, Seqs, z_dim):
+    def _make_precomp(self, Seqs):
         """
         Make the precomputation matrices specified by the GPFA algorithm.
 
@@ -1200,8 +1074,6 @@ class GPFA(sklearn.base.BaseEstimator):
         ----------
         Seqs : numpy.recarray
             The sequence struct of inferred latents, etc.
-        z_dim : int
-        The dimension of the latent space.
 
         Returns
         -------
@@ -1232,17 +1104,17 @@ class GPFA(sklearn.base.BaseEstimator):
         # assign some helpful precomp items
         # this is computationally cheap, so we keep a few loops in MATLAB
         # for ease of readability.
-        precomp = np.empty(z_dim, dtype=[(
+        precomp = np.empty(self.z_dim, dtype=[(
             'absDif', object), ('difSq', object), ('Tmax', object),
             ('Tu', object)])
-        for i in range(z_dim):
+        for i in range(self.z_dim):
             precomp[i]['absDif'] = np.abs(Tdif)
             precomp[i]['difSq'] = Tdif ** 2
             precomp[i]['Tmax'] = Tmax
         # find unique numbers of trial lengths
         trial_lengths_num_unique = np.unique(Tall)
         # Loop once for each state dimension (each GP)
-        for i in range(z_dim):
+        for i in range(self.z_dim):
             precomp_Tu = np.empty(len(trial_lengths_num_unique), dtype=[(
                 'nList', object), ('T', int), ('numTrials', int),
                 ('PautoSUM', object)])
@@ -1258,7 +1130,7 @@ class GPFA(sklearn.base.BaseEstimator):
         # Fill out PautoSum
         ############################################################
         # Loop once for each state dimension (each GP)
-        for i in range(z_dim):
+        for i in range(self.z_dim):
             # Loop once for each trial length (each of Tu)
             for j in range(len(trial_lengths_num_unique)):
                 # Loop once for each trial (each of nList)
