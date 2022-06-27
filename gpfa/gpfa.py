@@ -486,7 +486,7 @@ class GPFA(sklearn.base.BaseEstimator):
         # =====================
         print('\nFitting GPFA model...')
 
-        latent_seqs, lls, iter_time = self._em(X)
+        latent_seqs = self._em(X)
 
         # Orthonormalize the columns of the loading matrix `C`.
         if self.z_dim == 1:
@@ -503,14 +503,13 @@ class GPFA(sklearn.base.BaseEstimator):
 
         self.params['Corth'] = Corth
 
-        self.fit_info = {'iteration_time': iter_time, 'log_likelihoods': lls}
-
         return latent_seqs
 
     def _em(self, X):
         """
-        Fits GPFA model parameters using expectation-maximization (EM)
-        algorithm.
+        Fits GPFA model parameters (updates `self.params`) using expectation-maximization
+        (EM) algorithm.
+        And also updates `self.fit_info`
 
         Parameters
         ----------
@@ -523,8 +522,6 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Returns
         -------
-        params : dict
-            GPFA model parameter estimates, returned by EM algorithm
         latent_seqs : numpy.recarray
             a copy of the training data structure, augmented with the new
             fields:
@@ -607,8 +604,7 @@ class GPFA(sklearn.base.BaseEstimator):
                 self.params['R'] = (r + r.T) / 2  # ensure symmetry
 
             if self.params['notes']['learnKernelParams']:
-                res = self._learn_gp_params(latent_seqs)
-                self.params['gamma'] = res['gamma']
+                self._learn_gp_params(latent_seqs)
 
             t_end = time.time() - tic
             iter_time.append(t_end)
@@ -630,7 +626,9 @@ class GPFA(sklearn.base.BaseEstimator):
             warnings.warn('Private variance floor used for one or more observed '
                         'dimensions in GPFA.')
 
-        return latent_seqs, lls, iter_time
+        self.fit_info = {'iteration_time': iter_time, 'log_likelihoods': lls}
+
+        return latent_seqs
 
     def _infer_latents(self, X, get_ll=True):
         """
@@ -783,26 +781,20 @@ class GPFA(sklearn.base.BaseEstimator):
             raise ValueError("Only 'rbf' GP covariance type is supported.")
         if self.params['notes']['learnGPNoise']:
             raise ValueError("learnGPNoise is not supported.")
-        param_name = 'gamma'
-
-        init_gamma = self.params[param_name]
-        param_opt = {param_name: np.empty_like(init_gamma)}
 
         precomp = self._make_precomp(latent_seqs)
 
         # Loop once for each state dimension (each GP)
         for i in range(self.z_dim):
             const = {'eps': self.params['eps'][i]}
-            initg = np.log(init_gamma[i])
+            initg = np.log(self.params['gamma'][i])
             res_opt = optimize.minimize(self._grad_betgam, initg,
                                         args=(precomp[i], const),
                                         method='L-BFGS-B', jac=True)
-            param_opt['gamma'][i] = np.exp(res_opt.x)
+            self.params['gamma'][i] = np.exp(res_opt.x)
 
             if self.verbose:
                 print(f'\n Converged p; z_dim:{i}, p:{res_opt.x}')
-
-        return param_opt
 
 
     def _orthonormalize(self, seqs):
@@ -1086,12 +1078,10 @@ class GPFA(sklearn.base.BaseEstimator):
         All inputs are named sensibly to those in `learnGPparams`.
         This code probably should not be called from anywhere but there.
 
-        We bother with this method because we
-        need this particular matrix sum to be
-        as fast as possible.  Thus, no error checking
-        is done here as that would add needless computation.
-        Instead, the onus is on the caller (which should be
-        learnGPparams()) to make sure this is called correctly.
+        We bother with this method because we need this particular matrix sum to 
+        be as fast as possible.  Thus, no error checking is done here as that
+        would add needless computation. Instead, the onus is on the caller (which
+        should be `_learn_gp_params()`) to make sure this is called correctly.
 
         Finally, see the notes in the GPFA README.
         """
