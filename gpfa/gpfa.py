@@ -1075,7 +1075,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Notes
         -----
-        All inputs are named sensibly to those in `learnGPparams`.
+        All inputs are named sensibly to those in `_learn_gp_params`.
         This code probably should not be called from anywhere but there.
 
         We bother with this method because we need this particular matrix sum to 
