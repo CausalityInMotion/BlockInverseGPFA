@@ -125,7 +125,7 @@ class GPFA(sklearn.base.BaseEstimator):
     valid_data_names_ : tuple of str
         Names of the data contained in the resultant data structure, used to
         check the validity of users' request
-    Estimated model parameters. Updated at each run of the fit() method.
+    Estimated model parameters. Updated when calling `fit()` method.
     covType_ : str
         type of GP covariance, either 'rbf', 'tri', or 'logexp'.
         Currently, only 'rbf' is supported.
@@ -487,14 +487,14 @@ class GPFA(sklearn.base.BaseEstimator):
 
         # Orthonormalize the columns of the loading matrix `C`.
         if self.z_dim == 1:
-            # OrthTrans is transform matrix            
-            self.OrthTrans = np.sqrt(np.dot(self.C_.T, self.C_))
+            # OrthTrans_ is transform matrix            
+            self.OrthTrans_ = np.sqrt(np.dot(self.C_.T, self.C_))
             # Orthonormalized loading matrix
-            Corth = np.linalg.solve(self.OrthTrans.T, self.C_.T).T
+            Corth = np.linalg.solve(self.OrthTrans_.T, self.C_.T).T
 
         else:
             UU, DD, VV = sp.linalg.svd(self.C_, full_matrices=False)
-            self.OrthTrans = np.dot(np.diag(DD), VV)
+            self.OrthTrans_ = np.dot(np.diag(DD), VV)
             # Orthonormalized loading matrix
             Corth = UU
 
@@ -530,10 +530,6 @@ class GPFA(sklearn.base.BaseEstimator):
             pZ_covGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
                 posterior covariance over time for each latent
                 variable
-        lls : list
-            list of log likelihoods after each EM iteration
-        iter_time : list
-            lisf of computation times (in seconds) for each EM iteration
         """
         T = np.array([X_n.shape[1] for X_n in X])
         lls = []
@@ -552,7 +548,11 @@ class GPFA(sklearn.base.BaseEstimator):
             # ==== E STEP =====
             if not np.isnan(ll):
                 ll_old = ll
-            latent_seqs, ll = self._infer_latents(X, get_ll=get_ll)
+            if get_ll:
+                latent_seqs, ll = self._infer_latents(X)
+            else:
+                latent_seqs = self._infer_latents(X, get_ll=False)
+                ll = np.nan
             lls.append(ll)
 
             # ==== M STEP ====
@@ -639,7 +639,7 @@ class GPFA(sklearn.base.BaseEstimator):
             experimental trial) of shape (#x_dim, #bins)
         get_ll : bool, optional
             specifies whether to compute data log likelihood (default: True)
-
+            Default : True 
         Returns
         -------
         latent_seqs : numpy.recarray
@@ -654,7 +654,7 @@ class GPFA(sklearn.base.BaseEstimator):
             pZ_covGP : (#bins, #bins, #z_dim) numpy.ndarray
                     posterior covariance over time for each latent variable
         ll : float
-            data log likelihood, numpy.nan is returned when `get_ll` is set False
+            data log likelihood, returned when `get_ll` is set True
         """
         x_dim = self.C_.shape[0]
 
@@ -748,11 +748,9 @@ class GPFA(sklearn.base.BaseEstimator):
 
         if get_ll:
             ll /= 2
-        else:
-            ll = np.nan
+            return latent_seqs, ll
 
-        return latent_seqs, ll
-
+        return latent_seqs
 
     def _learn_gp_params(self, latent_seqs):
         """Updates parameters of GP state model, given trajectories.
@@ -778,7 +776,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         # Loop once for each state dimension (each GP)
         for i in range(self.z_dim):
-            const = {'eps_': self.eps_[i]}
+            const = {'eps': self.eps_[i]}
             initg = np.log(self.gamma_[i])
             res_opt = optimize.minimize(self._grad_betgam, initg,
                                         args=(precomp[i], const),
@@ -816,7 +814,7 @@ class GPFA(sklearn.base.BaseEstimator):
             `pZ_mu_orth`, the orthonormalized trajectories.
         """
         Z_all = np.hstack(seqs['pZ_mu'])
-        pZ_mu_orth = np.dot(self.OrthTrans, Z_all)
+        pZ_mu_orth = np.dot(self.OrthTrans_, Z_all)
         # add the field `pZ_mu_orth` to seq
         seqs = self._segment_by_trial(seqs, pZ_mu_orth, 'pZ_mu_orth')
 
@@ -1146,8 +1144,8 @@ class GPFA(sklearn.base.BaseEstimator):
         Tmax = pre_comp['Tmax']
 
         # temp is Tmax x Tmax
-        temp = (1 - const['eps_']) * np.exp(-np.exp(p) / 2 * pre_comp['difSq'])
-        Kmax = temp + const['eps_'] * np.eye(Tmax)
+        temp = (1 - const['eps']) * np.exp(-np.exp(p) / 2 * pre_comp['difSq'])
+        Kmax = temp + const['eps'] * np.eye(Tmax)
         dKdgamma_max = -0.5 * temp * pre_comp['difSq']
 
         dEdgamma = 0

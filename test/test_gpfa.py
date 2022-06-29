@@ -199,6 +199,6 @@ class TestGPFA(unittest.TestCase):
         """
         pZ_mu = self.results['pZ_mu'][0]
         pZ_mu_orth = self.results['pZ_mu_orth'][0]
-        test_pZ_mu_orth = np.dot(self.gpfa.OrthTrans, pZ_mu)
+        test_pZ_mu_orth = np.dot(self.gpfa.OrthTrans_, pZ_mu)
         # Assert
         self.assertTrue(np.allclose(pZ_mu_orth, test_pZ_mu_orth))
