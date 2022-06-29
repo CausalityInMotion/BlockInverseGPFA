@@ -130,15 +130,15 @@ class TestGPFA(unittest.TestCase):
         for n, t in enumerate(self.T):
             # get the kernal as defined in GPFA
             _, k_big_inv, _ = self.gpfa._make_k_big(n_timesteps=t)
-            rinv = np.diag(1.0 / np.diag(self.gpfa.params['R']))
-            c_rinv = self.gpfa.params['C'].T.dot(rinv)
+            rinv = np.diag(1.0 / np.diag(self.gpfa.R_))
+            c_rinv = self.gpfa.C_.T.dot(rinv)
 
             # C'R_invC
-            c_rinv_c = c_rinv.dot(self.gpfa.params['C'])
+            c_rinv_c = c_rinv.dot(self.gpfa.C_)
 
             # subtract mean from activities (y - d)
             dif = np.hstack([self.X[n]]) - \
-                self.gpfa.params['d'][:, np.newaxis]
+                self.gpfa.d_[:, np.newaxis]
             # C'R_inv * (y - d)
             term1_mat = c_rinv.dot(dif).reshape(
                                         (self.z_dim * t, -1), order='F')
@@ -188,8 +188,8 @@ class TestGPFA(unittest.TestCase):
         """
         Test GPFA orthonormalization transform of the parameter `C`.
         """
-        corth = self.gpfa.params['Corth']
-        c_orth = linalg.orth(self.gpfa.params['C'])
+        corth = self.gpfa.Corth_
+        c_orth = linalg.orth(self.gpfa.C_)
         # Assert
         self.assertTrue(np.allclose(c_orth, corth))
 
@@ -199,6 +199,6 @@ class TestGPFA(unittest.TestCase):
         """
         pZ_mu = self.results['pZ_mu'][0]
         pZ_mu_orth = self.results['pZ_mu_orth'][0]
-        test_pZ_mu_orth = np.dot(self.gpfa.OrthTrans, pZ_mu)
+        test_pZ_mu_orth = np.dot(self.gpfa.OrthTrans_, pZ_mu)
         # Assert
         self.assertTrue(np.allclose(pZ_mu_orth, test_pZ_mu_orth))
