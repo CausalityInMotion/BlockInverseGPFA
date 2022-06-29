@@ -275,6 +275,9 @@ class GPFA(sklearn.base.BaseEstimator):
 
             If covariance matrix of input data is rank deficient.
         """
+        # ====================================================================
+        # Cut trials: Extracts trial segments that are all of the same length.
+        # ====================================================================
         X_in = X
         if use_cut_trials:
             # For compute efficiency, train on shorter segments of trials
@@ -283,7 +286,10 @@ class GPFA(sklearn.base.BaseEstimator):
                 warnings.warn('No segments extracted for training. Defaulting '
                               'to segLength=Inf.')
                 X_in = self._cut_trials(X_in, seg_length=np.inf)
-        # Check if training data covariance is full rank
+
+        # =================================================
+        # Check if training data's covariance is full rank.
+        # =================================================
         X_all = np.hstack(X_in)
         x_dim = X_all.shape[0]
 
@@ -298,12 +304,66 @@ class GPFA(sklearn.base.BaseEstimator):
             print(f'Latent space dimensionality: {self.z_dim}')
             print(f'Observation dimensionality: {X_all.any(axis=1).sum()}')
 
-        # The following does the heavy lifting.
-        self.train_latent_seqs_ = self._fitting_core(X=X_in)
+        # ==================================
+        # Initialize state model parameters
+        # ==================================
+        self.covType_ = 'rbf'
+        # GP timescale
+        # Assume binWidth is the time step size.
+        self.gamma_ = (self.bin_size / self.tau_init)**2 * np.ones(self.z_dim)
+        # GP noise variance
+        self.eps_ = self.eps_init * np.ones(self.z_dim)
+
+        # ========================================
+        # Initialize observation model parameters
+        # ========================================
+        print('Initializing parameters using factor analysis...')
+
+        fa = FactorAnalysis(
+                        n_components=self.z_dim, copy=True,
+                        noise_variance_init=np.diag(np.cov(X_all, bias=True))
+                        )
+        fa.fit(X_all.T)
+        self.d_ = X_all.mean(axis=1)
+        self.C_ = fa.components_.T
+        self.R_ = np.diag(fa.noise_variance_)
+
+        # Define parameter constraints
+        self.notes_ = {
+            'learnKernelParams': True,
+            'learnGPNoise': False,
+            'RforceDiagonal': True,
+        }
+
+        # =====================
+        # Fit model parameters
+        # =====================
+        print('\nFitting GPFA model...')
+
+        self.train_latent_seqs_ = self._em(X_in)
         # If `use_cut_trials=True` re-compute the latent sequence on a full
         # X rather than on the cut_trial
         if use_cut_trials:
-            self.train_latent_seqs_, _ = self._infer_latents(X)
+            self.train_latent_seqs_, _ = self._em(X)
+
+        # ===========================================
+        # compute the orthonormalization parameters.
+        # ===========================================
+
+        # Orthonormalize the columns of the loading matrix `C`.
+        if self.z_dim == 1:
+            # OrthTrans_ is transform matrix            
+            self.OrthTrans_ = np.sqrt(np.dot(self.C_.T, self.C_))
+            # Orthonormalized loading matrix
+            Corth = np.linalg.solve(self.OrthTrans_.T, self.C_.T).T
+
+        else:
+            UU, DD, VV = sp.linalg.svd(self.C_, full_matrices=False)
+            self.OrthTrans_ = np.dot(np.diag(DD), VV)
+            # Orthonormalized loading matrix
+            Corth = UU
+
+        self.Corth_ = Corth
 
         return self
 
@@ -418,89 +478,6 @@ class GPFA(sklearn.base.BaseEstimator):
         """
         _, ll = self.predict(X, returned_data=['pZ_mu'])
         return ll
-
-    def _fitting_core(self, X):
-        """
-        Fit the GPFA model with the given training data.
-
-        Parameters
-        ----------
-        X   : an array-like of observation sequences, one per trial.
-            Each element in X is a matrix of size #x_dim x #bins,
-            containing an observation sequence. The input dimensionality
-            #x_dim needs to be the same across elements in X, but #bins
-            can be different for each observation sequence.
-            Default : None
-
-        Returns
-        -------
-        latent_seqs : numpy.recarray
-            a copy of the training data structure, augmented with the new
-            fields:
-            pZ_mu : numpy.ndarray of shape (#z_dim x #bins)
-                posterior mean of latent variables at each time bin
-            pZ_cov : numpy.ndarray of shape (#z_dim, #z_dim, #bins)
-                posterior covariance between latent variables at each
-                timepoint
-            pZ_covGP : numpy.ndarray of shape (#bins, #bins, #z_dim)
-                posterior covariance over time for each latent
-                variable
-        """
-        # ==================================
-        # Initialize state model parameters
-        # ==================================
-        self.covType_ = 'rbf'
-        # GP timescale
-        # Assume binWidth is the time step size.
-        self.gamma_ = (self.bin_size / self.tau_init) ** 2 * np.ones(self.z_dim)
-        # GP noise variance
-        self.eps_ = self.eps_init * np.ones(self.z_dim)
-
-        # ========================================
-        # Initialize observation model parameters
-        # ========================================
-        print('Initializing parameters using factor analysis...')
-
-        X_all = np.hstack(X)
-        fa = FactorAnalysis(
-                        n_components=self.z_dim, copy=True,
-                        noise_variance_init=np.diag(np.cov(X_all, bias=True))
-                        )
-        fa.fit(X_all.T)
-        self.d_ = X_all.mean(axis=1)
-        self.C_ = fa.components_.T
-        self.R_ = np.diag(fa.noise_variance_)
-
-        # Define parameter constraints
-        self.notes_ = {
-            'learnKernelParams': True,
-            'learnGPNoise': False,
-            'RforceDiagonal': True,
-        }
-
-        # =====================
-        # Fit model parameters
-        # =====================
-        print('\nFitting GPFA model...')
-
-        latent_seqs = self._em(X)
-
-        # Orthonormalize the columns of the loading matrix `C`.
-        if self.z_dim == 1:
-            # OrthTrans_ is transform matrix            
-            self.OrthTrans_ = np.sqrt(np.dot(self.C_.T, self.C_))
-            # Orthonormalized loading matrix
-            Corth = np.linalg.solve(self.OrthTrans_.T, self.C_.T).T
-
-        else:
-            UU, DD, VV = sp.linalg.svd(self.C_, full_matrices=False)
-            self.OrthTrans_ = np.dot(np.diag(DD), VV)
-            # Orthonormalized loading matrix
-            Corth = UU
-
-        self.Corth_ = Corth
-
-        return latent_seqs
 
     def _em(self, X):
         """
