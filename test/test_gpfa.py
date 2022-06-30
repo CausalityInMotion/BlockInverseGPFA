@@ -108,13 +108,18 @@ class TestGPFA(unittest.TestCase):
         self.T = np.array([X_n.shape[1] for X_n in self.X])
         self.t_half = int(np.ceil(self.T[0] / 2.0))
 
+        # initialize GPFA
         self.gpfa = GPFA(
             bin_size=self.bin_size, z_dim=self.z_dim,
             em_max_iters=self.n_iters
             )
+        # fit the model
         self.gpfa.fit(self.X)
-        self.results, _ = self.gpfa.predict(
+        self.results, self.lls = self.gpfa.predict(
                                 returned_data=['pZ_mu', 'pZ_mu_orth'])
+
+        # get latents sequence and data log_likelihood
+        self.latent_seqs, self.ll = self.gpfa._infer_latents(self.X)
 
     def test_infer_latents(self):
         """
@@ -161,7 +166,7 @@ class TestGPFA(unittest.TestCase):
 
             test_latent_seqs[n]['pZ_cov'] = cov
         # get mean and covariance as implemented by GPFA
-        latent_seqs, _ = self.gpfa._infer_latents(self.X)
+        latent_seqs = self.latent_seqs
         # Assert
         self.assertTrue(np.allclose(
                 latent_seqs['pZ_mu'][0],
@@ -169,6 +174,15 @@ class TestGPFA(unittest.TestCase):
         self.assertTrue(np.allclose(
                 latent_seqs['pZ_cov'][0],
                 test_latent_seqs['pZ_cov'][0]))
+
+    def test_data_loglikelihood(self):
+        """
+        Test the data log_likelihood
+        """
+        test_ll = -3203.143374597069
+        ll = self.ll
+        # Assert
+        self.assertEqual(test_ll, ll)
 
     def test_fill_persymm(self):
         """
