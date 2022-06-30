@@ -115,7 +115,7 @@ class TestGPFA(unittest.TestCase):
             )
         # fit the model
         self.gpfa.fit(self.X)
-        self.results, self.lls = self.gpfa.predict(
+        self.results, _ = self.gpfa.predict(
                                 returned_data=['pZ_mu', 'pZ_mu_orth'])
 
         # get latents sequence and data log_likelihood
