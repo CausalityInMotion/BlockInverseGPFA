@@ -344,7 +344,7 @@ class GPFA(sklearn.base.BaseEstimator):
         # If `use_cut_trials=True` re-compute the latent sequence on a full
         # X rather than on the cut_trial
         if use_cut_trials:
-            self.train_latent_seqs_, _ = self._em(X)
+            self.train_latent_seqs_, _ = self._infer_latents(X)
 
         # ===========================================
         # compute the orthonormalization parameters.
@@ -604,6 +604,131 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return latent_seqs
 
+    def _infer_latents_old(self, X, get_ll=True):
+        """
+        Extracts latent trajectories from observed data
+        given GPFA model parameters.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            input data structure, whose n-th element (corresponding to the n-th
+            experimental trial) of shape (#x_dim, #bins)
+        get_ll : bool, optional
+            specifies whether to compute data log likelihood (default: True)
+            Default : True 
+        Returns
+        -------
+        latent_seqs : numpy.recarray
+            X_out : numpy.ndarray
+                input data structure, whose n-th element (corresponding to the n-th
+                experimental trial) has fields:
+                X : numpy.ndarray of shape (#x_dim, #bins)
+            pZ_mu : (#z_dim, #bins) numpy.ndarray
+                posterior mean of latent variables at each time bin
+            pZ_cov : (#z_dim, #z_dim, #bins) numpy.ndarray
+                posterior covariance between latent variables at each timepoint
+            pZ_covGP : (#bins, #bins, #z_dim) numpy.ndarray
+                    posterior covariance over time for each latent variable
+        ll : float
+            data log likelihood, returned when `get_ll` is set True
+        """
+        x_dim = self.C_.shape[0]
+
+        # copy the contents of the input data structure to output structure
+        X_out = np.empty(len(X), dtype=[('X', object)])
+        for s, seq in enumerate(X_out):
+            seq['X'] = X[s]
+
+        dtype_out = [(i, X_out[i].dtype) for i in X_out.dtype.names]
+        dtype_out.extend([('pZ_mu', object), ('pZ_cov', object),
+                        ('pZ_covGP', object)])
+        latent_seqs = np.empty(len(X_out), dtype=dtype_out)
+        for dtype_name in X_out.dtype.names:
+            latent_seqs[dtype_name] = X_out[dtype_name]
+
+        # Precomputations
+        if self.notes_['RforceDiagonal']:
+            rinv = np.diag(1.0 / np.diag(self.R_))
+            logdet_r = (np.log(np.diag(self.R_))).sum()
+        else:
+            rinv = linalg.inv(self.R_)
+            rinv = (rinv + rinv.T) / 2  # ensure symmetry
+            logdet_r = fast_logdet(self.R_)
+
+        c_rinv = self.C_.T.dot(rinv)
+        c_rinv_c = c_rinv.dot(self.C_)
+
+        t_all = [X_n.shape[1] for X_n in X]
+        t_uniq = np.unique(t_all)
+        ll = 0.
+
+        # Overview:
+        # - Outer loop on each element of Tu.
+        # - For each element of Tu, find all trials with that length.
+        # - Do inference and LL computation for all those trials together.
+        for t in t_uniq:
+            k_big, k_big_inv, logdet_k_big = self._make_k_big(t)
+            k_big = sparse.csr_matrix(k_big)
+
+            blah = [c_rinv_c for _ in range(t)]
+            c_rinv_c_big = linalg.block_diag(*blah)  # (z_dim*T) x (z_dim*T)
+            minv, logdet_m = self._inv_persymm(k_big_inv + c_rinv_c_big, self.z_dim)
+
+            # Note that posterior covariance does not depend on observations,
+            # so can compute once for all trials with same T.
+            # z_dim*T x z_dim*T posterior covariance for each timepoint
+            vsm = np.full((self.z_dim, self.z_dim, t), np.nan)
+            idx = np.arange(0, self.z_dim * t + 1, self.z_dim)
+            for i in range(t):
+                vsm[:, :, i] = minv[idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
+
+            # T x T posterior covariance for each GP
+            vsm_gp = np.full((t, t, self.z_dim), np.nan)
+            for i in range(self.z_dim):
+                vsm_gp[:, :, i] = minv[i::self.z_dim, i::self.z_dim]
+
+            # Process all trials with length T
+            n_list = np.where(t_all == t)[0]
+            # dif is x_dim x sum(T)
+            dif = np.hstack(latent_seqs[n_list]['X']) - self.d_[:, np.newaxis]
+            # term1Mat is (z_dim*T) x length(nList)
+            term1_mat = c_rinv.dot(dif).reshape((self.z_dim * t, -1), order='F')
+
+            # Compute blkProd = CRinvC_big * invM efficiently
+            # blkProd is block persymmetric, so just compute top half
+            t_half = int(np.ceil(t / 2.0))
+            blk_prod = np.zeros((self.z_dim * t_half, self.z_dim * t))
+            idx = range(0, self.z_dim * t_half + 1, self.z_dim)
+            for i in range(t_half):
+                blk_prod[idx[i]:idx[i + 1], :] = c_rinv_c.dot(
+                    minv[idx[i]:idx[i + 1], :])
+            blk_prod = k_big[:self.z_dim * t_half, :].dot(
+                self._fill_persymm(np.eye(self.z_dim * t_half, self.z_dim * t) -
+                                    blk_prod, self.z_dim, t))
+            # latent_variable Matrix (Z_mat) is (z_dim*T) x length(nList)
+            Z_mat = self._fill_persymm(
+                blk_prod, self.z_dim, t).dot(term1_mat)
+
+            for i, n in enumerate(n_list):
+                latent_seqs[n]['pZ_mu'] = \
+                    Z_mat[:, i].reshape((self.z_dim, t), order='F')
+                latent_seqs[n]['pZ_cov'] = vsm
+                latent_seqs[n]['pZ_covGP'] = vsm_gp
+
+            if get_ll:
+                # Compute data likelihood
+                val = -t * logdet_r - logdet_k_big - logdet_m \
+                    - x_dim * t * np.log(2 * np.pi)
+                ll = ll + len(n_list) * val - (rinv.dot(dif) * dif).sum() \
+                    + (term1_mat.T.dot(minv) * term1_mat.T).sum()
+
+        if get_ll:
+            ll /= 2
+            return latent_seqs, ll
+
+        return latent_seqs
+
     def _infer_latents(self, X, get_ll=True):
         """
         Extracts latent trajectories from observed data
@@ -672,12 +797,12 @@ class GPFA(sklearn.base.BaseEstimator):
             k_big = sparse.csr_matrix(k_big)
 
             blah = [c_rinv_c for _ in range(t)]
-            c_rinv_c_big = linalg.block_diag(*blah)  # (x_dim*T) x (x_dim*T)
+            c_rinv_c_big = linalg.block_diag(*blah)  # (z_dim*T) x (z_dim*T)
             minv, logdet_m = self._inv_persymm(k_big_inv + c_rinv_c_big, self.z_dim)
 
             # Note that posterior covariance does not depend on observations,
             # so can compute once for all trials with same T.
-            # x_dim x x_dim posterior covariance for each timepoint
+            # z_dim*T x z_dim*T posterior covariance for each timepoint
             vsm = np.full((self.z_dim, self.z_dim, t), np.nan)
             idx = np.arange(0, self.z_dim * t + 1, self.z_dim)
             for i in range(t):
@@ -695,20 +820,8 @@ class GPFA(sklearn.base.BaseEstimator):
             # term1Mat is (z_dim*T) x length(nList)
             term1_mat = c_rinv.dot(dif).reshape((self.z_dim * t, -1), order='F')
 
-            # Compute blkProd = CRinvC_big * invM efficiently
-            # blkProd is block persymmetric, so just compute top half
-            t_half = int(np.ceil(t / 2.0))
-            blk_prod = np.zeros((self.z_dim * t_half, self.z_dim * t))
-            idx = range(0, self.z_dim * t_half + 1, self.z_dim)
-            for i in range(t_half):
-                blk_prod[idx[i]:idx[i + 1], :] = c_rinv_c.dot(
-                    minv[idx[i]:idx[i + 1], :])
-            blk_prod = k_big[:self.z_dim * t_half, :].dot(
-                self._fill_persymm(np.eye(self.z_dim * t_half, self.z_dim * t) -
-                                    blk_prod, self.z_dim, t))
             # latent_variable Matrix (Z_mat) is (z_dim*T) x length(nList)
-            Z_mat = self._fill_persymm(
-                blk_prod, self.z_dim, t).dot(term1_mat)
+            Z_mat = minv.dot(term1_mat)
 
             for i, n in enumerate(n_list):
                 latent_seqs[n]['pZ_mu'] = \
