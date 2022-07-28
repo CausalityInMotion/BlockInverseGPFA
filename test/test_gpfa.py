@@ -8,7 +8,7 @@ GPFA Unittests.
 import unittest
 import numpy as np
 from scipy import linalg
-from gpfa import GPFA
+from gpfa import GPFA 
 
 
 class TestGPFA(unittest.TestCase):
@@ -179,7 +179,7 @@ class TestGPFA(unittest.TestCase):
         """
         Test the data log_likelihood
         """
-        test_ll = -3203.143374597069
+        test_ll = -3203.143374597131
         ll = self.ll
         # Assert
         self.assertEqual(test_ll, ll)
