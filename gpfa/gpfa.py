@@ -213,7 +213,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
     >>> gpfa = GPFA(bin_size=bin_size, z_dim=2)
     >>> gpfa.fit(X)
-    >>> results = gpfa.predict(data,
+    >>> results = gpfa.predict(X,
     ...                        returned_data=['pZ_mu_orth', 'pZ_mu'])
     >>> pZ_mu_orth = results['pZ_mu_orth']
     >>> pZ_mu = results['pZ_mu']
@@ -660,36 +660,38 @@ class GPFA(sklearn.base.BaseEstimator):
         c_rinv = self.C_.T.dot(rinv)
         c_rinv_c = c_rinv.dot(self.C_)
 
+        # Get all trial lengths and find the unique lengths
+        # Find the maximum trial length
         t_all = [X_n.shape[1] for X_n in X]
-        t_max = max(t_all)
         t_uniq = np.unique(t_all)
+        t_max = max(t_uniq)
         ll = 0.
 
-        k_big = self._make_k_big(t_max)
+        K_big = self._make_k_big(t_max)
         blah = [c_rinv_c for _ in range(t_max)]
-        c_rinv_c_big = linalg.block_diag(*blah)  # (z_dim*T) x (z_dim*T)
+        C_rinv_c_big = linalg.block_diag(*blah)  # (z_dim*T) x (z_dim*T)
 
         # Overview:
         # - Outer loop on each element of Tu.
-        # - For each element of Tu, find all trials with that length.
         # - Do inference and LL computation for all those trials together.
-        first_t = True
         for t in t_uniq:
-            if first_t:
-                k_big_inv = linalg.inv(k_big[:t * self.z_dim, :t * self.z_dim])
-                logdet_k_big = - fast_logdet(k_big_inv)
-                M = k_big_inv + c_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
-                minv = linalg.inv(M)
-                logdet_m = - fast_logdet(minv)
-
+            if t == t_uniq[0]:
+                K_big_inv = linalg.inv(K_big[:t * self.z_dim, :t * self.z_dim])
+                logdet_k_big = - fast_logdet(K_big_inv)
+                M = K_big_inv + C_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
+                M_inv = linalg.inv(M)
+                logdet_m = - fast_logdet(M_inv)
             else:
-                Ainv = k_big_inv
-                k_big_inv, logdet_k_big, MAinv = self._block_inversion(
-                    k_big[:t * self.z_dim, :t * self.z_dim], Ainv, minv, False
+                # MAinv is returned here to be used as Ainv in the next call
+                # It is computated this way because MAinv of M at t is not equal
+                # to M_inv at t previous.
+                K_big_inv, logdet_k_big, MAinv = self._sym_block_inversion(
+                    K_big[:t * self.z_dim, :t * self.z_dim], K_big_inv, logdet_k_big,
+                    M_inv
                     )
-                M = k_big_inv + c_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
-                minv, logdet_m = self._block_inversion(M, MAinv, minv, True)
-            first_t = False
+                
+                M = K_big_inv + C_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
+                M_inv, logdet_m = self._sym_block_inversion(M, MAinv, logdet_m)
 
             # Note that posterior covariance does not depend on observations,
             # so can compute once for all trials with same T.
@@ -697,12 +699,12 @@ class GPFA(sklearn.base.BaseEstimator):
             vsm = np.full((self.z_dim, self.z_dim, t), np.nan)
             idx = np.arange(0, self.z_dim * t + 1, self.z_dim)
             for i in range(t):
-                vsm[:, :, i] = minv[idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
+                vsm[:, :, i] = M_inv[idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
 
             # T x T posterior covariance for each GP
             vsm_gp = np.full((t, t, self.z_dim), np.nan)
             for i in range(self.z_dim):
-                vsm_gp[:, :, i] = minv[i::self.z_dim, i::self.z_dim]
+                vsm_gp[:, :, i] = M_inv[i::self.z_dim, i::self.z_dim]
 
             # Process all trials with length T
             n_list = np.where(t_all == t)[0]
@@ -712,7 +714,7 @@ class GPFA(sklearn.base.BaseEstimator):
             term1_mat = c_rinv.dot(dif).reshape((self.z_dim * t, -1), order='F')
 
             # latent_variable Matrix (Z_mat) is (z_dim*T) x length(nList)
-            Z_mat = minv.dot(term1_mat)
+            Z_mat = M_inv.dot(term1_mat)
 
             for i, n in enumerate(n_list):
                 latent_seqs[n]['pZ_mu'] = \
@@ -725,7 +727,7 @@ class GPFA(sklearn.base.BaseEstimator):
                 val = -t * logdet_r - logdet_k_big - logdet_m \
                     - x_dim * t * np.log(2 * np.pi)
                 ll = ll + len(n_list) * val - (rinv.dot(dif) * dif).sum() \
-                    + (term1_mat.T.dot(minv) * term1_mat.T).sum()
+                    + (term1_mat.T.dot(M_inv) * term1_mat.T).sum()
 
         if get_ll:
             ll /= 2
@@ -878,43 +880,37 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return X_out
 
-    def _block_inversion(self, M, Ainv, Minv, return_MAinv = True):
+    def _sym_block_inversion(self, M, Ainv, logdet_Ainv, X=None):
         """
-        Inverts a matrix using the block matrix inversion. This function
-        is faster than calling inv(M) directly beacuse it partions M into
-        four squares (A, B, C, D) of arbitrary sizes and then computes the
-        inverse of each part using the Schur complement properties. It
-        also takes advantage of the previous M inverse to compute the inverse
-        of the next M matrix.
+        Inverts the symmetric matrix M,
+                      [ A   B ]^-1   [ MAinv   MBinv ]
+        Minv = M^-1 = [       ]    = [               ]
+                      [ B^T D ]      [ MBinv^T MDinv ]
+        exploiting the existing knowledge of Ainv = A^-1 and its
+        log-determinant logdet_Ainv = log(|A^-1|) to speed up the computation.
+        This function is faster than calling inv(M) directly. It also supports
+        a faster computation of (MAinv + X)^-1 for some X, if given, where X
+        must be the same size as Ainv.
 
         Parameters
         ----------
         M : numpy.ndarray
-            The block persymmetric/symmetric matrix to be inversted
-            with dimensions (T_current * z_dim) x (T_current * z_dim).
-
-            Note: M here can be K_big or inv(K_big_inv + C.T @ R^1 @ C)
+            The symmetric matrix to be inverted.
         Ainv : numpy.ndarray
-            The inverted A portion of MAinv. This has to be known and
-            here it is treated as being equal to the previously computed
-            Minv. It's dimensions are (T_prev * z_dim) x (T_prev * z_dim).
-
-            Note: MAinv here can be K_big or inv(K_big_inv + C.T @ R^1 @ C)
-        Minv : numpy.ndarray
-            The inverted (K_big_inv + C.T @ R^1 @ C) only.
-        return_MAinv : bool, optional
-            When computing inv(K_big) return also the inverse of A to be used
-            in computing matrix M (i.e.,(K_big_inv + C.T @ R^1 @ C))
+            The (symmetric) inverse of the top-left block of M.
+        logdet_Ainv : int
+            The log-determinant of Ainv already known.
+        X : numpy.ndarray, optional
+            A previously known Minv.
 
         Returns
         -------
-        invM : numpy.ndarray
+        Minv : numpy.ndarray
             Inverse of M
         logdet_M : float
-            Log determinant of M
-        MAinv : numpy.ndarray
-            The inverse of A to be used in computing matrix M
-            (i.e.,(K_big_inv + C.T @ R^1 @ C))
+            Log-determinant of M
+        MAinvPXinv : numpy.ndarray
+            The inverse of (MAinv + X)^-1
         """
         t = len(Ainv)
         B = M[:t, t:]
@@ -925,18 +921,17 @@ class GPFA(sklearn.base.BaseEstimator):
         MCinv = - MDinv @ AinvB.T
         MAinv = Ainv + AinvB @ - MCinv
 
-        invM = np.block([
+        Minv = np.block([
             [MAinv, MCinv.T],
             [MCinv, MDinv]
         ])
+        logdet_M = logdet_Ainv - fast_logdet(MD)
+        if X is not None:
+            MAinv = X - X @ AinvB @ linalg.inv(MD + \
+                AinvB.T @ X @ AinvB) @ AinvB.T @ X
+            return Minv, logdet_M, MAinv
+        return Minv, logdet_M
 
-        logdet_M = - fast_logdet(invM)
-
-        if return_MAinv:
-            return invM, logdet_M
-        MAinv = Minv - Minv @ AinvB @ linalg.inv(MD + \
-                AinvB.T @ Minv @ AinvB) @ AinvB.T @ Minv
-        return invM, logdet_M, MAinv
 
     def _make_k_big(self, n_timesteps):
         """
