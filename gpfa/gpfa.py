@@ -677,21 +677,25 @@ class GPFA(sklearn.base.BaseEstimator):
         for t in t_uniq:
             if t == t_uniq[0]:
                 K_big_inv = linalg.inv(K_big[:t * self.z_dim, :t * self.z_dim])
-                logdet_k_big = - fast_logdet(K_big_inv)
+                logdet_k_big = fast_logdet(K_big[:t * self.z_dim, :t * self.z_dim])
                 M = K_big_inv + C_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
                 M_inv = linalg.inv(M)
-                logdet_m = - fast_logdet(M_inv)
+                logdet_M = fast_logdet(M)
             else:
-                # MAinv is returned here to be used as Ainv in the next call
-                # It is computated this way because MAinv of M at t is not equal
-                # to M_inv at t previous.
+                # Here, we compute the inverse of K for the current t from its known
+                # inverse for the previous t, using block matrix inversion identities.
+                # We also use those to update the previously computed M_inv by using
+                # the (top-left block of the) new K_big_inv rather than the K_big_inv
+                # for the previous t. This updated M_inv (here called MAinv) is in
+                # turn used to compute the M_inv for the current t using similar block
+                # matrix inversion identities.
                 K_big_inv, logdet_k_big, MAinv = self._sym_block_inversion(
                     K_big[:t * self.z_dim, :t * self.z_dim], K_big_inv, logdet_k_big,
                     M_inv
                     )
                 
                 M = K_big_inv + C_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
-                M_inv, logdet_m = self._sym_block_inversion(M, MAinv, logdet_m)
+                M_inv, logdet_M = self._sym_block_inversion(M, MAinv, logdet_M)
 
             # Note that posterior covariance does not depend on observations,
             # so can compute once for all trials with same T.
@@ -724,7 +728,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
             if get_ll:
                 # Compute data likelihood
-                val = -t * logdet_r - logdet_k_big - logdet_m \
+                val = -t * logdet_r - logdet_k_big - logdet_M \
                     - x_dim * t * np.log(2 * np.pi)
                 ll = ll + len(n_list) * val - (rinv.dot(dif) * dif).sum() \
                     + (term1_mat.T.dot(M_inv) * term1_mat.T).sum()
@@ -880,7 +884,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return X_out
 
-    def _sym_block_inversion(self, M, Ainv, logdet_Ainv, X=None):
+    def _sym_block_inversion(self, M, Ainv, logdet_A, X=None):
         """
         Inverts the symmetric matrix M,
                       [ A   B ]^-1   [ MAinv   MBinv ]
@@ -898,10 +902,10 @@ class GPFA(sklearn.base.BaseEstimator):
             The symmetric matrix to be inverted.
         Ainv : numpy.ndarray
             The (symmetric) inverse of the top-left block of M.
-        logdet_Ainv : int
-            The log-determinant of Ainv already known.
+        logdet_A : int
+            The log-determinant of A already known.
         X : numpy.ndarray, optional
-            A previously known Minv.
+            An arbitrary matrix of the same size as Ainv.
 
         Returns
         -------
@@ -910,7 +914,7 @@ class GPFA(sklearn.base.BaseEstimator):
         logdet_M : float
             Log-determinant of M
         MAinvPXinv : numpy.ndarray
-            The inverse of (MAinv + X)^-1
+            The inverse of (MAinv + X)
         """
         t = len(Ainv)
         B = M[:t, t:]
@@ -925,7 +929,7 @@ class GPFA(sklearn.base.BaseEstimator):
             [MAinv, MCinv.T],
             [MCinv, MDinv]
         ])
-        logdet_M = logdet_Ainv - fast_logdet(MD)
+        logdet_M = logdet_A + fast_logdet(MD)
         if X is not None:
             MAinv = X - X @ AinvB @ linalg.inv(MD + \
                 AinvB.T @ X @ AinvB) @ AinvB.T @ X
@@ -1151,4 +1155,4 @@ class GPFA(sklearn.base.BaseEstimator):
             seqs_new[n][fn] = Z[:, ctr:ctr + T_n]
             ctr += T_n
 
-        return seqs_new    
+        return seqs_new
