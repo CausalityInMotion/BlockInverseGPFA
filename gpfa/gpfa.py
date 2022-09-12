@@ -48,7 +48,6 @@ import warnings
 import numpy as np
 import scipy.linalg as linalg
 import scipy.optimize as optimize
-import scipy.sparse as sparse
 from tqdm import trange
 import sklearn
 import scipy as sp
@@ -604,7 +603,6 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return latent_seqs
 
-
     def _infer_latents(self, X, get_ll=True):
         """
         Extracts latent trajectories from observed data
@@ -692,8 +690,7 @@ class GPFA(sklearn.base.BaseEstimator):
                 K_big_inv, logdet_k_big, MAinv = self._sym_block_inversion(
                     K_big[:t * self.z_dim, :t * self.z_dim], K_big_inv, logdet_k_big,
                     M_inv
-                    )
-                
+                    )             
                 M = K_big_inv + C_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
                 M_inv, logdet_M = self._sym_block_inversion(M, MAinv, logdet_M)
 

@@ -20,7 +20,7 @@ class TestGPFA(unittest.TestCase):
         Set up synthetic data, initial parameters to help with the
         functions to be tested
         """
-        np.random.seed(0)
+        np.random.seed(10)
         self.bin_size = 0.02  # [s]
         self.n_iters = 10
         self.z_dim = 2
@@ -60,7 +60,7 @@ class TestGPFA(unittest.TestCase):
 
                 # get number of bins for the each epoch
                 # each each is a quarter of the total length.
-                epoch_len = int(t_l / len(rates_a))
+                epoch_len = int(np.ceil(t_l / len(rates_a)))
                 nbins_per_epoch = int(epoch_len / self.bin_size)
 
                 # generate two spike trains each with two neurons
@@ -180,7 +180,7 @@ class TestGPFA(unittest.TestCase):
         """
         Test the data log_likelihood
         """
-        test_ll = -3203.1433745971312
+        test_ll = -4086.041692328922
         ll = self.ll
         # Assert
         self.assertEqual(test_ll, ll)
