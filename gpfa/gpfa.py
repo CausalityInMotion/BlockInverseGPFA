@@ -545,7 +545,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
             # term is (z_dim+1) x (z_dim+1)
             term = np.vstack([np.hstack([sum_p_auto, sum_Zall]),
-                            np.hstack([sum_Zall.T, T.sum().reshape((1, 1))])])
+                             np.hstack([sum_Zall.T, T.sum().reshape((1, 1))])])
             # x_dim x (z_dim+1)
             cd = np.linalg.solve(term.T, np.hstack([sum_XZtrans, sum_Xall]).T).T
 
@@ -687,12 +687,12 @@ class GPFA(sklearn.base.BaseEstimator):
                 # for the previous t. This updated M_inv (here called MAinv) is in
                 # turn used to compute the M_inv for the current t using similar block
                 # matrix inversion identities.
-                K_big_inv, logdet_k_big, MAinv = self._sym_block_inversion(
-                    K_big[:t * self.z_dim, :t * self.z_dim], K_big_inv, logdet_k_big,
-                    M_inv
+                K_big_inv, logdet_k_big, MAinv, logdet_MAinv = self._sym_block_inversion(
+                    K_big[:t * self.z_dim, :t * self.z_dim], K_big_inv, -logdet_k_big,
+                    M_inv, -logdet_M
                     )             
                 M = K_big_inv + C_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
-                M_inv, logdet_M = self._sym_block_inversion(M, MAinv, logdet_M)
+                M_inv, logdet_M = self._sym_block_inversion(M, MAinv, logdet_MAinv)
 
             # Note that posterior covariance does not depend on observations,
             # so can compute once for all trials with same T.
@@ -769,7 +769,6 @@ class GPFA(sklearn.base.BaseEstimator):
 
             if self.verbose:
                 print(f'\n Converged p; z_dim:{i}, p:{res_opt.x}')
-
 
     def _orthonormalize(self, seqs):
         """
@@ -881,7 +880,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return X_out
 
-    def _sym_block_inversion(self, M, Ainv, logdet_A, X=None):
+    def _sym_block_inversion(self, M, Ainv, logdet_Ainv, X=None, logdet_X=None):
         """
         Inverts the symmetric matrix M,
                       [ A   B ]^-1   [ MAinv   MBinv ]
@@ -899,11 +898,12 @@ class GPFA(sklearn.base.BaseEstimator):
             The symmetric matrix to be inverted.
         Ainv : numpy.ndarray
             The (symmetric) inverse of the top-left block of M.
-        logdet_A : int
-            The log-determinant of A already known.
+        logdet_Ainv : float
+            The log-determinant of A^-1 already known.
         X : numpy.ndarray, optional
             An arbitrary matrix of the same size as Ainv.
-
+        logdet_X : float, optional
+            The log-determinant of X already known.
         Returns
         -------
         Minv : numpy.ndarray
@@ -912,6 +912,8 @@ class GPFA(sklearn.base.BaseEstimator):
             Log-determinant of M
         MAinvPXinv : numpy.ndarray
             The inverse of (MAinv + X)
+        loget_MAinv : float
+            Log-determinant of MAinvPXinv
         """
         t = len(Ainv)
         B = M[:t, t:]
@@ -926,13 +928,17 @@ class GPFA(sklearn.base.BaseEstimator):
             [MAinv, MCinv.T],
             [MCinv, MDinv]
         ])
-        logdet_M = logdet_A + fast_logdet(MD)
-        if X is not None:
-            MAinv = X - X @ AinvB @ linalg.inv(MD + \
-                AinvB.T @ X @ AinvB) @ AinvB.T @ X
-            return Minv, logdet_M, MAinv
-        return Minv, logdet_M
 
+        logdet_MD = fast_logdet(MD)
+        logdet_M = -logdet_Ainv + logdet_MD
+        if X is not None:
+            if logdet_X is None:
+                logdet_X = fast_logdet(X)
+            MDpAinvBXAinvB = MD + AinvB.T @ X @ AinvB
+            MAinv = X - X @ AinvB @ linalg.inv(MDpAinvBXAinvB) @ AinvB.T @ X
+            logdet_MAinv = logdet_MD + logdet_X - fast_logdet(MDpAinvBXAinvB)
+            return Minv, logdet_M, MAinv, logdet_MAinv
+        return Minv, logdet_M
 
     def _make_k_big(self, n_timesteps):
         """
@@ -967,7 +973,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         for i in range(self.z_dim):
             K = (1 - self.eps_[i]) * np.exp(-self.gamma_[i] / 2 *
-                                                Tdif ** 2) \
+                                            Tdif ** 2) \
                 + self.eps_[i] * np.eye(n_timesteps)
             K_big[i::self.z_dim, i::self.z_dim] = K
 
@@ -1028,7 +1034,7 @@ class GPFA(sklearn.base.BaseEstimator):
                 precomp_Tu[j]['T'] = trial_len_num
                 precomp_Tu[j]['numTrials'] = len(precomp_Tu[j]['nList'])
                 precomp_Tu[j]['PautoSUM'] = np.zeros((trial_len_num,
-                                                    trial_len_num))
+                                                      trial_len_num))
                 precomp[i]['Tu'] = precomp_Tu
 
         ############################################################
@@ -1044,7 +1050,6 @@ class GPFA(sklearn.base.BaseEstimator):
                         Seqs[n]['pZ_covGP'][:, :, i] \
                         + np.outer(Seqs[n]['pZ_mu'][i, :], Seqs[n]['pZ_mu'][i, :])
         return precomp
-
 
     def _grad_betgam(self, p, pre_comp, const):
         """
@@ -1111,7 +1116,6 @@ class GPFA(sklearn.base.BaseEstimator):
         df = -dEdgamma * np.exp(p)
 
         return f, df
-
 
     def _segment_by_trial(self, seqs, Z, fn):
         """
