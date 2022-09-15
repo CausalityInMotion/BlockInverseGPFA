@@ -48,6 +48,7 @@ import warnings
 import numpy as np
 import scipy.linalg as linalg
 import scipy.optimize as optimize
+import scipy.sparse as sparse
 from tqdm import trange
 import sklearn
 import scipy as sp
@@ -138,7 +139,7 @@ class GPFA(sklearn.base.BaseEstimator):
     C_ : (#x_dim, #z_dim) numpy.ndarray
         loading matrix, representing the mapping between the observed data
         space and the latent variable space
-    R_ : (#x_dim, #x_dim) numpy.ndarray
+    R_ : (#x_dim, #z_dim) numpy.ndarray
         observation noise covariance
     fit_info_ : dict
         Information of the fitting process. Updated at each run of the fit()
@@ -212,7 +213,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
     >>> gpfa = GPFA(bin_size=bin_size, z_dim=2)
     >>> gpfa.fit(X)
-    >>> results = gpfa.predict(X,
+    >>> results = gpfa.predict(data,
     ...                        returned_data=['pZ_mu_orth', 'pZ_mu'])
     >>> pZ_mu_orth = results['pZ_mu_orth']
     >>> pZ_mu = results['pZ_mu']
@@ -545,7 +546,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
             # term is (z_dim+1) x (z_dim+1)
             term = np.vstack([np.hstack([sum_p_auto, sum_Zall]),
-                             np.hstack([sum_Zall.T, T.sum().reshape((1, 1))])])
+                            np.hstack([sum_Zall.T, T.sum().reshape((1, 1))])])
             # x_dim x (z_dim+1)
             cd = np.linalg.solve(term.T, np.hstack([sum_XZtrans, sum_Xall]).T).T
 
@@ -600,6 +601,131 @@ class GPFA(sklearn.base.BaseEstimator):
                         'dimensions in GPFA.')
 
         self.fit_info_ = {'iteration_time': iter_time, 'log_likelihoods': lls}
+
+        return latent_seqs
+
+    def _infer_latents_old(self, X, get_ll=True):
+        """
+        Extracts latent trajectories from observed data
+        given GPFA model parameters.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            input data structure, whose n-th element (corresponding to the n-th
+            experimental trial) of shape (#x_dim, #bins)
+        get_ll : bool, optional
+            specifies whether to compute data log likelihood (default: True)
+            Default : True 
+        Returns
+        -------
+        latent_seqs : numpy.recarray
+            X_out : numpy.ndarray
+                input data structure, whose n-th element (corresponding to the n-th
+                experimental trial) has fields:
+                X : numpy.ndarray of shape (#x_dim, #bins)
+            pZ_mu : (#z_dim, #bins) numpy.ndarray
+                posterior mean of latent variables at each time bin
+            pZ_cov : (#z_dim, #z_dim, #bins) numpy.ndarray
+                posterior covariance between latent variables at each timepoint
+            pZ_covGP : (#bins, #bins, #z_dim) numpy.ndarray
+                    posterior covariance over time for each latent variable
+        ll : float
+            data log likelihood, returned when `get_ll` is set True
+        """
+        x_dim = self.C_.shape[0]
+
+        # copy the contents of the input data structure to output structure
+        X_out = np.empty(len(X), dtype=[('X', object)])
+        for s, seq in enumerate(X_out):
+            seq['X'] = X[s]
+
+        dtype_out = [(i, X_out[i].dtype) for i in X_out.dtype.names]
+        dtype_out.extend([('pZ_mu', object), ('pZ_cov', object),
+                        ('pZ_covGP', object)])
+        latent_seqs = np.empty(len(X_out), dtype=dtype_out)
+        for dtype_name in X_out.dtype.names:
+            latent_seqs[dtype_name] = X_out[dtype_name]
+
+        # Precomputations
+        if self.notes_['RforceDiagonal']:
+            rinv = np.diag(1.0 / np.diag(self.R_))
+            logdet_r = (np.log(np.diag(self.R_))).sum()
+        else:
+            rinv = linalg.inv(self.R_)
+            rinv = (rinv + rinv.T) / 2  # ensure symmetry
+            logdet_r = fast_logdet(self.R_)
+
+        c_rinv = self.C_.T.dot(rinv)
+        c_rinv_c = c_rinv.dot(self.C_)
+
+        t_all = [X_n.shape[1] for X_n in X]
+        t_uniq = np.unique(t_all)
+        ll = 0.
+
+        # Overview:
+        # - Outer loop on each element of Tu.
+        # - For each element of Tu, find all trials with that length.
+        # - Do inference and LL computation for all those trials together.
+        for t in t_uniq:
+            k_big, k_big_inv, logdet_k_big = self._make_k_big(t)
+            k_big = sparse.csr_matrix(k_big)
+
+            blah = [c_rinv_c for _ in range(t)]
+            c_rinv_c_big = linalg.block_diag(*blah)  # (z_dim*T) x (z_dim*T)
+            minv, logdet_m = self._inv_persymm(k_big_inv + c_rinv_c_big, self.z_dim)
+
+            # Note that posterior covariance does not depend on observations,
+            # so can compute once for all trials with same T.
+            # z_dim*T x z_dim*T posterior covariance for each timepoint
+            vsm = np.full((self.z_dim, self.z_dim, t), np.nan)
+            idx = np.arange(0, self.z_dim * t + 1, self.z_dim)
+            for i in range(t):
+                vsm[:, :, i] = minv[idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
+
+            # T x T posterior covariance for each GP
+            vsm_gp = np.full((t, t, self.z_dim), np.nan)
+            for i in range(self.z_dim):
+                vsm_gp[:, :, i] = minv[i::self.z_dim, i::self.z_dim]
+
+            # Process all trials with length T
+            n_list = np.where(t_all == t)[0]
+            # dif is x_dim x sum(T)
+            dif = np.hstack(latent_seqs[n_list]['X']) - self.d_[:, np.newaxis]
+            # term1Mat is (z_dim*T) x length(nList)
+            term1_mat = c_rinv.dot(dif).reshape((self.z_dim * t, -1), order='F')
+
+            # Compute blkProd = CRinvC_big * invM efficiently
+            # blkProd is block persymmetric, so just compute top half
+            t_half = int(np.ceil(t / 2.0))
+            blk_prod = np.zeros((self.z_dim * t_half, self.z_dim * t))
+            idx = range(0, self.z_dim * t_half + 1, self.z_dim)
+            for i in range(t_half):
+                blk_prod[idx[i]:idx[i + 1], :] = c_rinv_c.dot(
+                    minv[idx[i]:idx[i + 1], :])
+            blk_prod = k_big[:self.z_dim * t_half, :].dot(
+                self._fill_persymm(np.eye(self.z_dim * t_half, self.z_dim * t) -
+                                    blk_prod, self.z_dim, t))
+            # latent_variable Matrix (Z_mat) is (z_dim*T) x length(nList)
+            Z_mat = self._fill_persymm(
+                blk_prod, self.z_dim, t).dot(term1_mat)
+
+            for i, n in enumerate(n_list):
+                latent_seqs[n]['pZ_mu'] = \
+                    Z_mat[:, i].reshape((self.z_dim, t), order='F')
+                latent_seqs[n]['pZ_cov'] = vsm
+                latent_seqs[n]['pZ_covGP'] = vsm_gp
+
+            if get_ll:
+                # Compute data likelihood
+                val = -t * logdet_r - logdet_k_big - logdet_m \
+                    - x_dim * t * np.log(2 * np.pi)
+                ll = ll + len(n_list) * val - (rinv.dot(dif) * dif).sum() \
+                    + (term1_mat.T.dot(minv) * term1_mat.T).sum()
+
+        if get_ll:
+            ll /= 2
+            return latent_seqs, ll
 
         return latent_seqs
 
@@ -658,54 +784,34 @@ class GPFA(sklearn.base.BaseEstimator):
         c_rinv = self.C_.T.dot(rinv)
         c_rinv_c = c_rinv.dot(self.C_)
 
-        # Get all trial lengths and find the unique lengths
-        # Find the maximum trial length
         t_all = [X_n.shape[1] for X_n in X]
         t_uniq = np.unique(t_all)
-        t_max = max(t_uniq)
         ll = 0.
-
-        K_big = self._make_k_big(t_max)
-        blah = [c_rinv_c for _ in range(t_max)]
-        C_rinv_c_big = linalg.block_diag(*blah)  # (z_dim*T) x (z_dim*T)
 
         # Overview:
         # - Outer loop on each element of Tu.
+        # - For each element of Tu, find all trials with that length.
         # - Do inference and LL computation for all those trials together.
         for t in t_uniq:
-            if t == t_uniq[0]:
-                K_big_inv = linalg.inv(K_big[:t * self.z_dim, :t * self.z_dim])
-                logdet_k_big = fast_logdet(K_big[:t * self.z_dim, :t * self.z_dim])
-                M = K_big_inv + C_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
-                M_inv = linalg.inv(M)
-                logdet_M = fast_logdet(M)
-            else:
-                # Here, we compute the inverse of K for the current t from its known
-                # inverse for the previous t, using block matrix inversion identities.
-                # We also use those to update the previously computed M_inv by using
-                # the (top-left block of the) new K_big_inv rather than the K_big_inv
-                # for the previous t. This updated M_inv (here called MAinv) is in
-                # turn used to compute the M_inv for the current t using similar block
-                # matrix inversion identities.
-                K_big_inv, logdet_k_big, MAinv, logdet_MAinv = self._sym_block_inversion(
-                    K_big[:t * self.z_dim, :t * self.z_dim], K_big_inv, -logdet_k_big,
-                    M_inv, -logdet_M
-                    )             
-                M = K_big_inv + C_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
-                M_inv, logdet_M = self._sym_block_inversion(M, MAinv, logdet_MAinv)
+            k_big, k_big_inv, logdet_k_big = self._make_k_big(t)
+            k_big = sparse.csr_matrix(k_big)
+
+            blah = [c_rinv_c for _ in range(t)]
+            c_rinv_c_big = linalg.block_diag(*blah)  # (z_dim*T) x (z_dim*T)
+            minv, logdet_m = self._inv_persymm(k_big_inv + c_rinv_c_big, self.z_dim)
 
             # Note that posterior covariance does not depend on observations,
             # so can compute once for all trials with same T.
-            # z_dim x z_dim x T posterior covariance for each timepoint
+            # z_dim*T x z_dim*T posterior covariance for each timepoint
             vsm = np.full((self.z_dim, self.z_dim, t), np.nan)
             idx = np.arange(0, self.z_dim * t + 1, self.z_dim)
             for i in range(t):
-                vsm[:, :, i] = M_inv[idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
+                vsm[:, :, i] = minv[idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
 
             # T x T posterior covariance for each GP
             vsm_gp = np.full((t, t, self.z_dim), np.nan)
             for i in range(self.z_dim):
-                vsm_gp[:, :, i] = M_inv[i::self.z_dim, i::self.z_dim]
+                vsm_gp[:, :, i] = minv[i::self.z_dim, i::self.z_dim]
 
             # Process all trials with length T
             n_list = np.where(t_all == t)[0]
@@ -715,7 +821,7 @@ class GPFA(sklearn.base.BaseEstimator):
             term1_mat = c_rinv.dot(dif).reshape((self.z_dim * t, -1), order='F')
 
             # latent_variable Matrix (Z_mat) is (z_dim*T) x length(nList)
-            Z_mat = M_inv.dot(term1_mat)
+            Z_mat = minv.dot(term1_mat)
 
             for i, n in enumerate(n_list):
                 latent_seqs[n]['pZ_mu'] = \
@@ -725,10 +831,10 @@ class GPFA(sklearn.base.BaseEstimator):
 
             if get_ll:
                 # Compute data likelihood
-                val = -t * logdet_r - logdet_k_big - logdet_M \
+                val = -t * logdet_r - logdet_k_big - logdet_m \
                     - x_dim * t * np.log(2 * np.pi)
                 ll = ll + len(n_list) * val - (rinv.dot(dif) * dif).sum() \
-                    + (term1_mat.T.dot(M_inv) * term1_mat.T).sum()
+                    + (term1_mat.T.dot(minv) * term1_mat.T).sum()
 
         if get_ll:
             ll /= 2
@@ -769,6 +875,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
             if self.verbose:
                 print(f'\n Converged p; z_dim:{i}, p:{res_opt.x}')
+
 
     def _orthonormalize(self, seqs):
         """
@@ -880,66 +987,6 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return X_out
 
-    def _sym_block_inversion(self, M, Ainv, logdet_Ainv, X=None, logdet_X=None):
-        """
-        Inverts the symmetric matrix M,
-                      [ A   B ]^-1   [ MAinv   MBinv ]
-        Minv = M^-1 = [       ]    = [               ]
-                      [ B^T D ]      [ MBinv^T MDinv ]
-        exploiting the existing knowledge of Ainv = A^-1 and its
-        log-determinant logdet_Ainv = log(|A^-1|) to speed up the computation.
-        This function is faster than calling inv(M) directly. It also supports
-        a faster computation of (MAinv + X)^-1 for some X, if given, where X
-        must be the same size as Ainv.
-
-        Parameters
-        ----------
-        M : numpy.ndarray
-            The symmetric matrix to be inverted.
-        Ainv : numpy.ndarray
-            The (symmetric) inverse of the top-left block of M.
-        logdet_Ainv : float
-            The log-determinant of A^-1 already known.
-        X : numpy.ndarray, optional
-            An arbitrary matrix of the same size as Ainv.
-        logdet_X : float, optional
-            The log-determinant of X already known.
-        Returns
-        -------
-        Minv : numpy.ndarray
-            Inverse of M
-        logdet_M : float
-            Log-determinant of M
-        MAinvPXinv : numpy.ndarray
-            The inverse of (MAinv + X)
-        loget_MAinv : float
-            Log-determinant of MAinvPXinv
-        """
-        t = len(Ainv)
-        B = M[:t, t:]
-        D = M[t:, t:]
-        AinvB = Ainv @ B
-        MD = D - AinvB.T @ B
-        MDinv = linalg.inv(MD)
-        MCinv = - MDinv @ AinvB.T
-        MAinv = Ainv + AinvB @ - MCinv
-
-        Minv = np.block([
-            [MAinv, MCinv.T],
-            [MCinv, MDinv]
-        ])
-
-        logdet_MD = fast_logdet(MD)
-        logdet_M = -logdet_Ainv + logdet_MD
-        if X is not None:
-            if logdet_X is None:
-                logdet_X = fast_logdet(X)
-            MDpAinvBXAinvB = MD + AinvB.T @ X @ AinvB
-            MAinv = X - X @ AinvB @ linalg.inv(MDpAinvBXAinvB) @ AinvB.T @ X
-            logdet_MAinv = logdet_MD + logdet_X - fast_logdet(MDpAinvBXAinvB)
-            return Minv, logdet_M, MAinv, logdet_MAinv
-        return Minv, logdet_M
-
     def _make_k_big(self, n_timesteps):
         """
         Constructs full GP covariance matrix across all state dimensions and
@@ -957,6 +1004,10 @@ class GPFA(sklearn.base.BaseEstimator):
             The (t1, t2) block is diagonal, has dimensions z_dim x z_dim, and
             represents the covariance between the state vectors at timesteps
             t1 and t2. K_big is sparse and striped.
+        K_big_inv : np.ndarray
+            Inverse of K_big
+        logdet_K_big : float
+            Log determinant of K_big
 
         Raises
         ------
@@ -968,16 +1019,122 @@ class GPFA(sklearn.base.BaseEstimator):
             raise ValueError("Only 'rbf' GP covariance type is supported.")
 
         K_big = np.zeros((self.z_dim * n_timesteps, self.z_dim * n_timesteps))
+        K_big_inv = np.zeros((self.z_dim * n_timesteps, self.z_dim * n_timesteps))
         Tdif = np.tile(np.arange(0, n_timesteps), (n_timesteps, 1)).T \
             - np.tile(np.arange(0, n_timesteps), (n_timesteps, 1))
+        logdet_K_big = 0
 
         for i in range(self.z_dim):
             K = (1 - self.eps_[i]) * np.exp(-self.gamma_[i] / 2 *
-                                            Tdif ** 2) \
+                                                Tdif ** 2) \
                 + self.eps_[i] * np.eye(n_timesteps)
             K_big[i::self.z_dim, i::self.z_dim] = K
+            K_big_inv[i::self.z_dim, i::self.z_dim] = np.linalg.inv(K)
+            logdet_K = fast_logdet(K)
 
-        return K_big
+            logdet_K_big = logdet_K_big + logdet_K
+
+        return K_big, K_big_inv, logdet_K_big
+
+
+    def _inv_persymm(self, M, blk_size):
+        """
+        Inverts a matrix that is block persymmetric.  This function is
+        faster than calling inv(M) directly because it only computes the
+        top half of inv(M).  The bottom half of inv(M) is made up of
+        elements from the top half of inv(M).
+
+        WARNING: If the input matrix M is not block persymmetric, no
+        error message will be produced and the output of this function will
+        not be meaningful.
+
+        Parameters
+        ----------
+        M : (blkSize*T, blkSize*T) np.ndarray
+            The block persymmetric matrix to be inverted.
+            Each block is blkSize x blkSize, arranged in a T x T grid.
+        blk_size : int
+            Edge length of one block
+
+        Returns
+        -------
+        invM : (blkSize*T, blkSize*T) np.ndarray
+            Inverse of M
+        logdet_M : float
+            Log determinant of M
+        """
+        T = int(M.shape[0] / blk_size)
+        Thalf = int(np.ceil(T / 2.0))
+        mkr = blk_size * Thalf
+
+        invA11 = np.linalg.inv(M[:mkr, :mkr])
+        invA11 = (invA11 + invA11.T) / 2
+
+        # Multiplication of a sparse matrix by a dense matrix is not supported by
+        # SciPy. Making A12 a sparse matrix here  an error later.
+        off_diag_sparse = False
+        if off_diag_sparse:
+            A12 = sp.sparse.csr_matrix(M[:mkr, mkr:])
+        else:
+            A12 = M[:mkr, mkr:]
+
+        term = invA11.dot(A12)
+        F22 = M[mkr:, mkr:] - A12.T.dot(term)
+
+        res12 = np.linalg.solve(F22.T, -term.T).T
+        res11 = invA11 - res12.dot(term.T)
+        res11 = (res11 + res11.T) / 2
+
+        # Fill in bottom half of invM by picking elements from res11 and res12
+        invM = self._fill_persymm(np.hstack([res11, res12]), blk_size, T)
+
+        logdet_M = -fast_logdet(invA11) + fast_logdet(F22)
+
+        return invM, logdet_M
+
+
+    def _fill_persymm(self, p_in, blk_size, n_blocks, blk_size_vert=None):
+        """
+        Fills in the bottom half of a block persymmetric matrix, given the
+        top half.
+
+        Parameters
+        ----------
+        p_in :  (x_dim*Thalf, x_dim*T) np.ndarray
+            Top half of block persymmetric matrix, where Thalf = ceil(T/2)
+        blk_size : int
+            Edge length of one block
+        n_blocks : int
+            Number of blocks making up a row of Pin
+        blk_size_vert : int, optional
+            Vertical block edge length if blocks are not square.
+            `blk_size` is assumed to be the horizontal block edge length.
+
+        Returns
+        -------
+        Pout : (z_dim*T, z_dim*T) np.ndarray
+            Full block persymmetric matrix
+        """
+        if blk_size_vert is None:
+            blk_size_vert = blk_size
+
+        Nh = blk_size * n_blocks
+        Nv = blk_size_vert * n_blocks
+        Thalf = int(np.floor(n_blocks / 2.0))
+        THalf = int(np.ceil(n_blocks / 2.0))
+
+        Pout = np.empty((blk_size_vert * n_blocks, blk_size * n_blocks))
+        Pout[:blk_size_vert * THalf, :] = p_in
+        for i in range(Thalf):
+            for j in range(n_blocks):
+                Pout[Nv - (i + 1) * blk_size_vert:Nv - i * blk_size_vert,
+                    Nh - (j + 1) * blk_size:Nh - j * blk_size] \
+                    = p_in[i * blk_size_vert:(i + 1) *
+                        blk_size_vert,
+                        j * blk_size:(j + 1) * blk_size]
+
+        return Pout
+
 
     def _make_precomp(self, Seqs):
         """
@@ -1034,7 +1191,7 @@ class GPFA(sklearn.base.BaseEstimator):
                 precomp_Tu[j]['T'] = trial_len_num
                 precomp_Tu[j]['numTrials'] = len(precomp_Tu[j]['nList'])
                 precomp_Tu[j]['PautoSUM'] = np.zeros((trial_len_num,
-                                                      trial_len_num))
+                                                    trial_len_num))
                 precomp[i]['Tu'] = precomp_Tu
 
         ############################################################
@@ -1050,6 +1207,7 @@ class GPFA(sklearn.base.BaseEstimator):
                         Seqs[n]['pZ_covGP'][:, :, i] \
                         + np.outer(Seqs[n]['pZ_mu'][i, :], Seqs[n]['pZ_mu'][i, :])
         return precomp
+
 
     def _grad_betgam(self, p, pre_comp, const):
         """
@@ -1117,6 +1275,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return f, df
 
+
     def _segment_by_trial(self, seqs, Z, fn):
         """
         Segment and store data by trial.
@@ -1156,4 +1315,4 @@ class GPFA(sklearn.base.BaseEstimator):
             seqs_new[n][fn] = Z[:, ctr:ctr + T_n]
             ctr += T_n
 
-        return seqs_new
+        return seqs_new    

@@ -20,7 +20,7 @@ class TestGPFA(unittest.TestCase):
         Set up synthetic data, initial parameters to help with the
         functions to be tested
         """
-        np.random.seed(10)
+        np.random.seed(0)
         self.bin_size = 0.02  # [s]
         self.n_iters = 10
         self.z_dim = 2
@@ -60,7 +60,7 @@ class TestGPFA(unittest.TestCase):
 
                 # get number of bins for the each epoch
                 # each each is a quarter of the total length.
-                epoch_len = int(np.ceil(t_l / len(rates_a)))
+                epoch_len = int(t_l / len(rates_a))
                 nbins_per_epoch = int(epoch_len / self.bin_size)
 
                 # generate two spike trains each with two neurons
@@ -134,8 +134,7 @@ class TestGPFA(unittest.TestCase):
 
         for n, t in enumerate(self.T):
             # get the kernal as defined in GPFA
-            k_big = self.gpfa._make_k_big(n_timesteps=t)
-            k_big_inv = linalg.inv(k_big)
+            _, k_big_inv, _ = self.gpfa._make_k_big(n_timesteps=t)
             rinv = np.diag(1.0 / np.diag(self.gpfa.R_))
             c_rinv = self.gpfa.C_.T.dot(rinv)
 
@@ -180,10 +179,24 @@ class TestGPFA(unittest.TestCase):
         """
         Test the data log_likelihood
         """
-        test_ll = -4092.076144978909
+        test_ll = -3203.143374597131
         ll = self.ll
         # Assert
         self.assertEqual(test_ll, ll)
+
+    def test_fill_persymm(self):
+        """
+        GPFA takes advantage of the persymmetric structure of k_big_inv
+        by only computing the top half of the metric and filling the bottom
+        half with results from the top half.
+        Test if fill_persymm returns an expected filled matrix
+        """
+        _, k_big_inv, _ = self.gpfa._make_k_big(self.T[0])
+        full_k_big_inv = self.gpfa._fill_persymm(
+                                k_big_inv[:(self.z_dim*self.t_half), :],
+                                self.z_dim, self.T[0])
+        # Assert
+        self.assertTrue(np.allclose(k_big_inv, full_k_big_inv))
 
     def test_orthonormalized_transform(self):
         """
