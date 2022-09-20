@@ -53,6 +53,7 @@ import sklearn
 import scipy as sp
 from sklearn.utils.extmath import fast_logdet
 from sklearn.decomposition import FactorAnalysis
+from sklearn.metrics.pairwise import rbf_kernel
 
 
 __all__ = [
@@ -130,7 +131,7 @@ class GPFA(sklearn.base.BaseEstimator):
         Currently, only 'rbf' is supported.
     gamma_ : (1, #z_dim) numpy.ndarray
         related to GP timescales of latent variables before
-        orthonormalization by :math:`bin_size / sqrt(gamma_)`
+        orthonormalization by :math:`(bin_size / tau_init)^2`
     eps_ : (1, #z_dim) numpy.ndarray
         GP noise variances
     d_ : (#x_dim, 1) numpy.ndarray
@@ -968,13 +969,13 @@ class GPFA(sklearn.base.BaseEstimator):
             raise ValueError("Only 'rbf' GP covariance type is supported.")
 
         K_big = np.zeros((self.z_dim * n_timesteps, self.z_dim * n_timesteps))
-        Tdif = np.tile(np.arange(0, n_timesteps), (n_timesteps, 1)).T \
-            - np.tile(np.arange(0, n_timesteps), (n_timesteps, 1))
+        ts = np.arange(0, n_timesteps)
+        tsx, tsy = np.meshgrid(ts, ts)
+        Tdif = tsx - tsy
 
         for i in range(self.z_dim):
-            K = (1 - self.eps_[i]) * np.exp(-self.gamma_[i] / 2 *
-                                            Tdif ** 2) \
-                + self.eps_[i] * np.eye(n_timesteps)
+            rbf = rbf_kernel(Tdif, gamma=self.gamma_[i]/(n_timesteps * 2))
+            K = (1 - self.eps_[i]) * rbf + self.eps_[i] * np.eye(n_timesteps)
             K_big[i::self.z_dim, i::self.z_dim] = K
 
         return K_big
@@ -1009,18 +1010,16 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Tall = np.array([X_n.shape[1] for X_n in Seqs['X']])
         Tmax = max(Tall)
-        Tdif = np.tile(np.arange(0, Tmax), (Tmax, 1)).T \
-            - np.tile(np.arange(0, Tmax), (Tmax, 1))
+        tsx, tsy = np.meshgrid(np.arange(0, Tmax), np.arange(0, Tmax))
+        Tdif = tsx - tsy
 
         # assign some helpful precomp items
         # this is computationally cheap, so we keep a few loops in MATLAB
         # for ease of readability.
         precomp = np.empty(self.z_dim, dtype=[(
-            'absDif', object), ('difSq', object), ('Tmax', object),
-            ('Tu', object)])
+            'Tdif', object), ('Tmax', object), ('Tu', object)])
         for i in range(self.z_dim):
-            precomp[i]['absDif'] = np.abs(Tdif)
-            precomp[i]['difSq'] = Tdif ** 2
+            precomp[i]['Tdif'] = Tdif
             precomp[i]['Tmax'] = Tmax
         # find unique numbers of trial lengths
         trial_lengths_num_unique = np.unique(Tall)
@@ -1076,18 +1075,26 @@ class GPFA(sklearn.base.BaseEstimator):
         Tmax = pre_comp['Tmax']
 
         # temp is Tmax x Tmax
-        temp = (1 - const['eps']) * np.exp(-np.exp(p) / 2 * pre_comp['difSq'])
+        rbf = rbf_kernel(pre_comp['Tdif'], gamma=np.exp(p)/(Tmax * 2))
+        temp = (1 - const['eps']) * rbf
         Kmax = temp + const['eps'] * np.eye(Tmax)
-        dKdgamma_max = -0.5 * temp * pre_comp['difSq']
+        dKdgamma_max = -0.5 * temp * pre_comp['Tdif'] ** 2
 
         dEdgamma = 0
         f = 0
         for j in range(len(pre_comp['Tu'])):
             T = pre_comp['Tu'][j]['T']
+            if T == pre_comp['Tu'][0]['T']:
+                Kinv = np.linalg.inv(Kmax[:T, :T])
+                logdet_K = fast_logdet(Kmax[:T, :T])
+            else:
+                # Here, we compute the inverse of K for the current
+                # t from its known inverse for the previous t,
+                # using block matrix inversion identities.
+                Kinv, logdet_K = self._sym_block_inversion(
+                    Kmax[:T, :T], Kinv, -logdet_K
+                )
             Thalf = int(np.ceil(T / 2.0))
-
-            Kinv = np.linalg.inv(Kmax[:T, :T])
-            logdet_K = fast_logdet(Kmax[:T, :T])
 
             KinvM = Kinv[:Thalf, :].dot(dKdgamma_max[:T, :T])  # Thalf x T
             KinvMKinv = (KinvM.dot(Kinv)).T  # Thalf x T
