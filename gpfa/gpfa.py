@@ -965,10 +965,10 @@ class GPFA(sklearn.base.BaseEstimator):
         K_big = np.zeros((self.z_dim * n_timesteps, self.z_dim * n_timesteps))
         ts = np.arange(0, n_timesteps)
         tsx, tsy = np.meshgrid(ts, ts)
-        TdifSq = (tsx - tsy)**2 * self.bin_size
+        TdifSq = (tsx - tsy) * self.bin_size
 
         for i in range(self.z_dim):
-            K = (1 - self.eps_[i]) * np.exp(-0.5 * TdifSq / self.tau_[i]**2) \
+            K = (1 - self.eps_[i]) * np.exp(-0.5 * (TdifSq / self.tau_[i])**2) \
                 + self.eps_[i] * np.eye(n_timesteps)
             K_big[i::self.z_dim, i::self.z_dim] = K
 
@@ -1004,7 +1004,7 @@ class GPFA(sklearn.base.BaseEstimator):
         Tall = np.array([X_n.shape[1] for X_n in Seqs['X']])
         Tmax = max(Tall)
         tsx, tsy = np.meshgrid(np.arange(0, Tmax), np.arange(0, Tmax))
-        TdifSq = (tsx - tsy)**2
+        Tdif = (tsx - tsy) * self.bin_size
 
         # assign some helpful precomp items
         # this is computationally cheap, so we keep a few loops in MATLAB
@@ -1012,7 +1012,7 @@ class GPFA(sklearn.base.BaseEstimator):
         precomp = np.empty(self.z_dim, dtype=[(
             'TdifSq', object), ('Tmax', object), ('Tu', object)])
         for i in range(self.z_dim):
-            precomp[i]['TdifSq'] = TdifSq * self.bin_size
+            precomp[i]['TdifSq'] = Tdif**2 
             precomp[i]['Tmax'] = Tmax
         # find unique numbers of trial lengths
         trial_lengths_num_unique = np.unique(Tall)
@@ -1066,9 +1066,9 @@ class GPFA(sklearn.base.BaseEstimator):
         Tmax = pre_comp['Tmax']
 
         # temp is Tmax x Tmax
-        temp = (1 - const['eps']) * np.exp(-0.5 * pre_comp['TdifSq'] / np.exp(p)**2)
+        temp = (1 - const['eps']) * np.exp(-0.5 * pre_comp['TdifSq'] * np.exp(-p)**2)
         Kmax = temp + const['eps'] * np.eye(Tmax)
-        dKdtau_max = (temp * pre_comp['TdifSq']) / np.exp(p)**3
+        dKdtau_max = (temp * pre_comp['TdifSq']) * np.exp(-p)**3
 
         dEdtau = 0
         f = 0
