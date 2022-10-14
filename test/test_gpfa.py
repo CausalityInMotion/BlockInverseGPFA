@@ -59,7 +59,7 @@ class TestGPFA(unittest.TestCase):
             for n, t_l in enumerate(trial_lens):
 
                 # get number of bins for the each epoch
-                # each each is a quarter of the total length.
+                # each epoch is a quarter of the total length.
                 epoch_len = int(np.ceil(t_l / len(rates_a)))
                 nbins_per_epoch = int(epoch_len / self.bin_size)
 
@@ -180,7 +180,7 @@ class TestGPFA(unittest.TestCase):
         """
         Test the data log_likelihood
         """
-        test_ll = -4092.076144978909
+        test_ll = -4092.0761173380097
         ll = self.ll
         # Assert
         self.assertEqual(test_ll, ll)

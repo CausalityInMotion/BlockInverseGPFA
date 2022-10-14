@@ -53,6 +53,7 @@ import sklearn
 import scipy as sp
 from sklearn.utils.extmath import fast_logdet
 from sklearn.decomposition import FactorAnalysis
+from sklearn.metrics.pairwise import rbf_kernel
 
 
 __all__ = [
@@ -128,9 +129,8 @@ class GPFA(sklearn.base.BaseEstimator):
     covType_ : str
         type of GP covariance, either 'rbf', 'tri', or 'logexp'.
         Currently, only 'rbf' is supported.
-    gamma_ : (1, #z_dim) numpy.ndarray
-        related to GP timescales of latent variables before
-        orthonormalization by :math:`bin_size / sqrt(gamma_)`
+    tau_ : : (1, #z_dim) numpy.ndarray
+        GP timescale in sec
     eps_ : (1, #z_dim) numpy.ndarray
         GP noise variances
     d_ : (#x_dim, 1) numpy.ndarray
@@ -308,8 +308,7 @@ class GPFA(sklearn.base.BaseEstimator):
         # ==================================
         self.covType_ = 'rbf'
         # GP timescale
-        # Assume binWidth is the time step size.
-        self.gamma_ = (self.bin_size / self.tau_init)**2 * np.ones(self.z_dim)
+        self.tau_ = self.tau_init * np.ones(self.z_dim)
         # GP noise variance
         self.eps_ = self.eps_init * np.ones(self.z_dim)
 
@@ -761,11 +760,11 @@ class GPFA(sklearn.base.BaseEstimator):
         # Loop once for each state dimension (each GP)
         for i in range(self.z_dim):
             const = {'eps': self.eps_[i]}
-            initg = np.log(self.gamma_[i])
-            res_opt = optimize.minimize(self._grad_betgam, initg,
+            init_tau = np.log(self.tau_[i])
+            res_opt = optimize.minimize(self._grad_bettau, init_tau,
                                         args=(precomp[i], const),
                                         method='L-BFGS-B', jac=True)
-            self.gamma_[i] = np.exp(res_opt.x)
+            self.tau_[i] = np.exp(res_opt.x)
 
             if self.verbose:
                 print(f'\n Converged p; z_dim:{i}, p:{res_opt.x}')
@@ -944,12 +943,10 @@ class GPFA(sklearn.base.BaseEstimator):
         """
         Constructs full GP covariance matrix across all state dimensions and
         timesteps.
-
         Parameters
         ----------
         n_timesteps : int
             number of timesteps
-
         Returns
         -------
         K_big : np.ndarray
@@ -957,23 +954,20 @@ class GPFA(sklearn.base.BaseEstimator):
             The (t1, t2) block is diagonal, has dimensions z_dim x z_dim, and
             represents the covariance between the state vectors at timesteps
             t1 and t2. K_big is sparse and striped.
-
         Raises
         ------
         ValueError
             If covType_ != 'rbf'`.
-
         """
         if self.covType_ != 'rbf':
             raise ValueError("Only 'rbf' GP covariance type is supported.")
 
         K_big = np.zeros((self.z_dim * n_timesteps, self.z_dim * n_timesteps))
-        Tdif = np.tile(np.arange(0, n_timesteps), (n_timesteps, 1)).T \
-            - np.tile(np.arange(0, n_timesteps), (n_timesteps, 1))
+        ts = np.arange(0, n_timesteps)
+        TdifSq = ((ts - ts[:, np.newaxis]) * self.bin_size)**2
 
         for i in range(self.z_dim):
-            K = (1 - self.eps_[i]) * np.exp(-self.gamma_[i] / 2 *
-                                            Tdif ** 2) \
+            K = (1 - self.eps_[i]) * np.exp(-0.5 * TdifSq / self.tau_[i]**2) \
                 + self.eps_[i] * np.eye(n_timesteps)
             K_big[i::self.z_dim, i::self.z_dim] = K
 
@@ -1006,21 +1000,18 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Finally, see the notes in the GPFA README.
         """
-
         Tall = np.array([X_n.shape[1] for X_n in Seqs['X']])
         Tmax = max(Tall)
-        Tdif = np.tile(np.arange(0, Tmax), (Tmax, 1)).T \
-            - np.tile(np.arange(0, Tmax), (Tmax, 1))
+        ts = np.arange(0, Tmax)
+        TdifSq = ((ts - ts[:, np.newaxis]) * self.bin_size)**2
 
         # assign some helpful precomp items
         # this is computationally cheap, so we keep a few loops in MATLAB
         # for ease of readability.
         precomp = np.empty(self.z_dim, dtype=[(
-            'absDif', object), ('difSq', object), ('Tmax', object),
-            ('Tu', object)])
+            'TdifSq', object), ('Tmax', object), ('Tu', object)])
         for i in range(self.z_dim):
-            precomp[i]['absDif'] = np.abs(Tdif)
-            precomp[i]['difSq'] = Tdif ** 2
+            precomp[i]['TdifSq'] = TdifSq
             precomp[i]['Tmax'] = Tmax
         # find unique numbers of trial lengths
         trial_lengths_num_unique = np.unique(Tall)
@@ -1051,21 +1042,19 @@ class GPFA(sklearn.base.BaseEstimator):
                         + np.outer(Seqs[n]['pZ_mu'][i, :], Seqs[n]['pZ_mu'][i, :])
         return precomp
 
-    def _grad_betgam(self, p, pre_comp, const):
+    def _grad_bettau(self, p, pre_comp, const):
         """
         Gradient computation for GP timescale optimization.
         This function is called by minimize.m.
-
         Parameters
         ----------
         p : float
             variable with respect to which optimization is performed,
-            where :math:`p = log(1 / timescale^2)`
+            where :math:`p = log(timescale)`
         pre_comp : numpy.recarray
             structure containing precomputations
         const : dict
             contains hyperparameters
-
         Returns
         -------
         f : float
@@ -1076,20 +1065,28 @@ class GPFA(sklearn.base.BaseEstimator):
         Tmax = pre_comp['Tmax']
 
         # temp is Tmax x Tmax
-        temp = (1 - const['eps']) * np.exp(-np.exp(p) / 2 * pre_comp['difSq'])
+        temp = (1 - const['eps']) * np.exp(-0.5 * pre_comp['TdifSq'] * np.exp(2 * -p))
         Kmax = temp + const['eps'] * np.eye(Tmax)
-        dKdgamma_max = -0.5 * temp * pre_comp['difSq']
+        dKdtau_max = (temp * pre_comp['TdifSq']) * np.exp(3 * -p)
 
-        dEdgamma = 0
+        dEdtau = 0
         f = 0
         for j in range(len(pre_comp['Tu'])):
             T = pre_comp['Tu'][j]['T']
+            if T == pre_comp['Tu'][0]['T']:
+                Kinv = np.linalg.inv(Kmax[:T, :T])
+                logdet_K = fast_logdet(Kmax[:T, :T])
+            else:
+                # Here, we compute the inverse of K for the current
+                # t from its known inverse for the previous t,
+                # using block matrix inversion identities.
+                Kinv, logdet_K = self._sym_block_inversion(
+                    Kmax[:T, :T], Kinv, -logdet_K
+                )
+
             Thalf = int(np.ceil(T / 2.0))
 
-            Kinv = np.linalg.inv(Kmax[:T, :T])
-            logdet_K = fast_logdet(Kmax[:T, :T])
-
-            KinvM = Kinv[:Thalf, :].dot(dKdgamma_max[:T, :T])  # Thalf x T
+            KinvM = Kinv[:Thalf, :].dot(dKdtau_max[:T, :T])  # Thalf x T
             KinvMKinv = (KinvM.dot(Kinv)).T  # Thalf x T
 
             dg_KinvM = np.diag(KinvM)
@@ -1103,7 +1100,7 @@ class GPFA(sklearn.base.BaseEstimator):
                 KinvMKinv.ravel('F')[:mkr])
             pauto_kinv_dot_rest = PautoSUM.ravel('F')[-1:mkr - 1:- 1].dot(
                 KinvMKinv.ravel('F')[:(T ** 2 - mkr)])
-            dEdgamma = dEdgamma - 0.5 * numTrials * tr_KinvM \
+            dEdtau = dEdtau - 0.5 * numTrials * tr_KinvM \
                 + 0.5 * pauto_kinv_dot \
                 + 0.5 * pauto_kinv_dot_rest
 
@@ -1112,8 +1109,8 @@ class GPFA(sklearn.base.BaseEstimator):
 
         f = -f
         # exp(p) is needed because we're computing gradients with
-        # respect to log(gamma_), rather than gamma_
-        df = -dEdgamma * np.exp(p)
+        # respect to log(tau_), rather than tau_
+        df = -dEdtau * np.exp(p)
 
         return f, df
 
