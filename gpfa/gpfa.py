@@ -964,11 +964,10 @@ class GPFA(sklearn.base.BaseEstimator):
 
         K_big = np.zeros((self.z_dim * n_timesteps, self.z_dim * n_timesteps))
         ts = np.arange(0, n_timesteps)
-        tsx, tsy = np.meshgrid(ts, ts)
-        TdifSq = (tsx - tsy) * self.bin_size
+        TdifSq = ((ts - ts[:, np.newaxis]) * self.bin_size)**2
 
         for i in range(self.z_dim):
-            K = (1 - self.eps_[i]) * np.exp(-0.5 * (TdifSq / self.tau_[i])**2) \
+            K = (1 - self.eps_[i]) * np.exp(-0.5 * TdifSq / self.tau_[i]**2) \
                 + self.eps_[i] * np.eye(n_timesteps)
             K_big[i::self.z_dim, i::self.z_dim] = K
 
@@ -1003,8 +1002,8 @@ class GPFA(sklearn.base.BaseEstimator):
         """
         Tall = np.array([X_n.shape[1] for X_n in Seqs['X']])
         Tmax = max(Tall)
-        tsx, tsy = np.meshgrid(np.arange(0, Tmax), np.arange(0, Tmax))
-        Tdif = (tsx - tsy) * self.bin_size
+        ts = np.arange(0, Tmax)
+        TdifSq = ((ts - ts[:, np.newaxis]) * self.bin_size)**2
 
         # assign some helpful precomp items
         # this is computationally cheap, so we keep a few loops in MATLAB
@@ -1012,7 +1011,7 @@ class GPFA(sklearn.base.BaseEstimator):
         precomp = np.empty(self.z_dim, dtype=[(
             'TdifSq', object), ('Tmax', object), ('Tu', object)])
         for i in range(self.z_dim):
-            precomp[i]['TdifSq'] = Tdif**2 
+            precomp[i]['TdifSq'] = TdifSq
             precomp[i]['Tmax'] = Tmax
         # find unique numbers of trial lengths
         trial_lengths_num_unique = np.unique(Tall)
@@ -1066,9 +1065,9 @@ class GPFA(sklearn.base.BaseEstimator):
         Tmax = pre_comp['Tmax']
 
         # temp is Tmax x Tmax
-        temp = (1 - const['eps']) * np.exp(-0.5 * pre_comp['TdifSq'] * np.exp(-p)**2)
+        temp = (1 - const['eps']) * np.exp(-0.5 * pre_comp['TdifSq'] * np.exp(2 * -p))
         Kmax = temp + const['eps'] * np.eye(Tmax)
-        dKdtau_max = (temp * pre_comp['TdifSq']) * np.exp(-p)**3
+        dKdtau_max = (temp * pre_comp['TdifSq']) * np.exp(3 * -p)
 
         dEdtau = 0
         f = 0
@@ -1111,7 +1110,7 @@ class GPFA(sklearn.base.BaseEstimator):
         f = -f
         # exp(p) is needed because we're computing gradients with
         # respect to log(tau_), rather than tau_
-        df = -dEdtau / np.exp(p)
+        df = -dEdtau * np.exp(p)
 
         return f, df
 
