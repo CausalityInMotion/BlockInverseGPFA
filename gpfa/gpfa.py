@@ -44,17 +44,18 @@ from __future__ import division, print_function, unicode_literals
 
 import time
 import warnings
-
-import numpy as np
-import scipy.linalg as linalg
-import scipy.optimize as optimize
-from tqdm import trange
 import sklearn
 import scipy as sp
+import numpy as np
+from tqdm import trange
+from sklearn.base import clone
+import scipy.linalg as linalg
+import scipy.optimize as optimize
 from sklearn.utils.extmath import fast_logdet
 from sklearn.decomposition import FactorAnalysis
+from sklearn.gaussian_process.kernels import Kernel
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
-from sklearn.gaussian_process.kernels import ConstantKernel as C
+from sklearn.gaussian_process.kernels import ConstantKernel
 
 
 __all__ = [
@@ -95,16 +96,15 @@ class GPFA(sklearn.base.BaseEstimator):
     bin_size : float, optional
         observed data bin width in sec
         Default: 0.02
-    kernel : kernel instance, default=None
-        The kernel specifying the covariance function of the GP. 
-        If None is passed, the kernel is
-        ``ConstantKernel((1 - eps_), constant_value_bounds="fixed")
-        * RBF(tau_init, length_scale_bounds="fixed")
-        + ConstantKernel(eps_init, constant_value_bounds='fixed')
-        * WhiteKernel(noise_level=1, noise_level_bounds='fixed')``
-        is used as default.
-        Note that the kernel hyperparameter (i.e, tau_init) is optimized
-        during fitting unless the bounds are marked as "fixed".
+    gp_kernel : kernel instance, default=None
+        If None is passed, the kernel defaults to
+        ConstantKernel(1-0.001, constant_value_bounds='fixed')
+        * RBF(length_scale=0.1)
+        + ConstantKernel(0.001, constant_value_bounds='fixed')
+        * WhiteKernel(noise_level=1, noise_level_bounds='fixed')
+        where only kernel hyperparameters not marked as 'fixed'
+        are learned - in this case only the `length scale`
+        of the RBF kernel.
     min_var_frac : float, optional
         fraction of overall data variance for each observed dimension to set as
         the private variance floor.  This is used to combat Heywood cases,
@@ -117,12 +117,6 @@ class GPFA(sklearn.base.BaseEstimator):
     em_max_iters : int, optional
         number of EM iterations to run
         Default: 500
-    tau_init : float, optional
-        GP timescale initialization in sec
-        Default: 0.1
-    eps_init : float, optional
-        GP noise variance initialization
-        Default: 1e-3
     freq_ll : int, optional
         data likelihood is computed at every freq_ll EM iterations. freq_ll = 1
         means that data likelihood is computed at every iteration.
@@ -136,16 +130,7 @@ class GPFA(sklearn.base.BaseEstimator):
     valid_data_names_ : tuple of str
         Names of the data contained in the resultant data structure, used to
         check the validity of users' request
-    TODO: update this
-    covType_ : str
-        type of GP covariance, either 'rbf', 'tri', or 'logexp'.
-        Currently, only 'rbf' is supported.
     Estimated model parameters. Updated when calling `fit()` method.
-        kernel_fitted_params_ : (#non_fixed_params, #z_dim) numpy.ndarray
-            The non-fixed, log-transformed hyperparameters of the kernel
-            related to the GP timescale in sec
-        eps_ : float
-            GP noise variances
         d_ : (#x_dim, 1) numpy.ndarray
             observation mean
         C_ : (#x_dim, #z_dim) numpy.ndarray
@@ -232,17 +217,21 @@ class GPFA(sklearn.base.BaseEstimator):
 
     """
 
-    def __init__(self, bin_size=0.02, kernel=None, z_dim=3,
-                 min_var_frac=0.01, tau_init=0.1, eps_init=1.0E-3,
-                 em_tol=1.0E-8, em_max_iters=500, freq_ll=5,
-                 verbose=False
+    def __init__(
+                self,
+                bin_size=0.02,
+                gp_kernel=None,
+                z_dim=3,
+                min_var_frac=0.01,
+                em_tol=1.0E-8,
+                em_max_iters=500,
+                freq_ll=5,
+                verbose=False
                  ):
         self.bin_size = bin_size
         self.z_dim = z_dim
-        self.kernel = kernel
+        self.gp_kernel = gp_kernel
         self.min_var_frac = min_var_frac
-        self.tau_init = tau_init
-        self.eps_init = eps_init
         self.em_tol = em_tol
         self.em_max_iters = em_max_iters
         self.freq_ll = freq_ll
@@ -255,7 +244,19 @@ class GPFA(sklearn.base.BaseEstimator):
         self.verbose = verbose
 
         # will be updated later
-        self.kernel_fitting_params_ = None
+        if self.gp_kernel is None:  # Use an RBF kernel as default
+            self.gp_kernel = ConstantKernel(
+                1-0.001, constant_value_bounds='fixed'
+                ) * RBF(length_scale=0.1) + ConstantKernel(
+                    0.001, constant_value_bounds='fixed'
+                    ) * WhiteKernel(
+                        noise_level=1, noise_level_bounds='fixed'
+                        )
+
+        if isinstance(self.gp_kernel, Kernel):
+            self.gp_kernel = [
+                clone(self.gp_kernel) for _ in range(self.z_dim)
+                ]
         self.fit_info_ = {}
         self.train_latent_seqs_ = None
 
@@ -320,27 +321,6 @@ class GPFA(sklearn.base.BaseEstimator):
             print(f'Latent space dimensionality: {self.z_dim}')
             print(f'Observation dimensionality: {X_all.any(axis=1).sum()}')
 
-        # ==================================
-        # Initialize state model parameters
-        # ==================================
-        # self.covType_ = 'rbf'  TODO: update this
-        # GP noise variance
-        self.eps_ = self.eps_init
-        # GP timescale
-        if self.kernel is None:  # Use an RBF kernel as default
-            self.kernel = C(
-                (1 - self.eps_), constant_value_bounds='fixed') \
-                * RBF(length_scale=self.tau_init) \
-                + C((self.eps_), constant_value_bounds='fixed') \
-                * WhiteKernel(noise_level=1, noise_level_bounds='fixed'
-                )
-            self.kernel_fitted_params_ = np.log(
-                self.tau_init * np.ones(self.z_dim)
-                ).reshape(-1, 1)
-        else:
-            self.kernel_fitted_params_ = self.kernel.theta \
-                                         * np.ones(self.z_dim).reshape(-1, 1)
-
         # ========================================
         # Initialize observation model parameters
         # ========================================
@@ -358,7 +338,6 @@ class GPFA(sklearn.base.BaseEstimator):
         # Define parameter constraints
         self.notes_ = {
             'learnKernelParams': True,
-            'learnGPNoise': False,
             'RforceDiagonal': True,
         }
 
@@ -775,31 +754,21 @@ class GPFA(sklearn.base.BaseEstimator):
         ----------
         latent_seqs : numpy.recarray
             data structure containing trajectories;
-
-        Raises
-        ------
-        TODO: update this
-        ValueError
-            If covType_ != 'rbf'`.
-            If `notes_['learnGPNoise']` set to True.
-
         """
-        if self.notes_['learnGPNoise']:
-            raise ValueError("learnGPNoise is not supported.")
-
         precomp = self._make_precomp(latent_seqs)
 
         # Loop once for each state dimension (each GP)
         for i in range(self.z_dim):
-            init_theta = self.kernel_fitted_params_[i]
+            gp_kernel_i = self.gp_kernel[i]
+            init_theta = self.gp_kernel[i].theta
             res_opt = optimize.minimize(
                         self._grad_bet_theta,
                         init_theta,
-                        args=(precomp[i]),
+                        args=(gp_kernel_i, precomp[i]),
                         method='L-BFGS-B',
                         jac=True
                         )
-            self.kernel_fitted_params_[i] = res_opt.x
+            self.gp_kernel[i].theta = res_opt.x
 
             if self.verbose:
                 print(f'\n Converged p; z_dim:{i}, p:{res_opt.x}')
@@ -995,8 +964,7 @@ class GPFA(sklearn.base.BaseEstimator):
         tsdt = np.arange(0, n_timesteps) * self.bin_size
 
         for i in range(self.z_dim):
-            self.kernel.theta = self.kernel_fitted_params_[i]
-            k = self.kernel(tsdt[:,np.newaxis], eval_gradient=True)[0]
+            k = self.gp_kernel[i].__call__(tsdt[:,np.newaxis])
             K_big[i::self.z_dim, i::self.z_dim] = k
 
         return K_big
@@ -1021,7 +989,7 @@ class GPFA(sklearn.base.BaseEstimator):
         All inputs are named sensibly to those in `_learn_gp_params`.
         This code probably should not be called from anywhere but there.
 
-        We bother with this method because we need this particular matrix sum to 
+        We bother with this method because we need this particular matrix sum to
         be as fast as possible.  Thus, no error checking is done here as that
         would add needless computation. Instead, the onus is on the caller (which
         should be `_learn_gp_params()`) to make sure this is called correctly.
@@ -1070,51 +1038,49 @@ class GPFA(sklearn.base.BaseEstimator):
                             )
         return precomp
 
-    def _grad_bet_theta(self, p, pre_comp):
+    def _grad_bet_theta(self, theta, gp_kernel_i, pre_comp):
         """
         Gradient computation for GP timescale optimization.
         This function is called by minimize.m.
         Parameters
         ----------
-        p : float
-            variable with respect to which optimization is performed,
-            where :math:`p = log(timescale)`
+        theta : numpy.array
+            the flattened and log-transformed non-fixed hyperparams
+            to which optimization is performed,
+            where :math:`theta = log(timescale)`
+        gp_kernel_i : kernel instance
+            the i-th GP kernel corresponding to the i-th latent variable
         pre_comp : numpy.recarray
             structure containing precomputations
         Returns
         -------
-        f : float
-            value of objective function E[log P({x},{y})] at p
-        df : float
-            gradient at p
+        f : numpy.array
+            values of objective function E[log P({x},{y})] at theta
+        df : numpy.array
+            gradients at theta
         """
-        self.kernel.theta = p 
-        kernel = self.kernel(pre_comp['Tsdt'], eval_gradient=True)
-        Kmax = kernel[0]
-        K_gradient = kernel[1]
+        gp_kernel_i.theta = theta
+        Kmax, K_gradient = gp_kernel_i(
+            pre_comp['Tsdt'], eval_gradient=True
+            )
+        dEdtheta, f = np.zeros(len(theta)), np.zeros(len(theta))
+        for j in range(len(pre_comp['Tu'])):
+            T = pre_comp['Tu'][j]['T']
+            if j == 0:
+                Kinv = linalg.inv(Kmax[:T, :T])
+                logdet_K = fast_logdet(Kmax[:T, :T])
+            else:
+                # Here, we compute the inverse of K for the current
+                # T from its known inverse for the previous T,
+                # using block matrix inversion identities.
+                Kinv, logdet_K = self._sym_block_inversion(
+                    Kmax[:T, :T], Kinv, -logdet_K
+                )
+            Thalf = int(np.ceil(T / 2.0))
 
-        f_list, df_list = [], []
-        for k_grad in K_gradient.T:
-            dKdtau_max = k_grad
+            for i, dKdtheta in enumerate(K_gradient.T):
 
-            dEdtau = 0
-            f = 0
-            for j in range(len(pre_comp['Tu'])):
-                T = pre_comp['Tu'][j]['T']
-                if T == pre_comp['Tu'][0]['T']:
-                    Kinv = np.linalg.inv(Kmax[:T, :T])
-                    logdet_K = fast_logdet(Kmax[:T, :T])
-                else:
-                    # Here, we compute the inverse of K for the current
-                    # t from its known inverse for the previous t,
-                    # using block matrix inversion identities.
-                    Kinv, logdet_K = self._sym_block_inversion(
-                        Kmax[:T, :T], Kinv, -logdet_K
-                    )
-
-                Thalf = int(np.ceil(T / 2.0))
-
-                KinvM = Kinv[:Thalf, :].dot(dKdtau_max[:T, :T])  # Thalf x T
+                KinvM = Kinv[:Thalf, :].dot(dKdtheta[:T, :T])  # Thalf x T
                 KinvMKinv = (KinvM.dot(Kinv)).T  # Thalf x T
 
                 dg_KinvM = np.diag(KinvM)
@@ -1128,21 +1094,16 @@ class GPFA(sklearn.base.BaseEstimator):
                     KinvMKinv.ravel('F')[:mkr])
                 pauto_kinv_dot_rest = PautoSUM.ravel('F')[-1:mkr - 1:- 1].dot(
                     KinvMKinv.ravel('F')[:(T ** 2 - mkr)])
-                dEdtau = dEdtau - 0.5 * numTrials * tr_KinvM \
+                dEdtheta[i] = dEdtheta[i] - 0.5 * numTrials * tr_KinvM \
                     + 0.5 * pauto_kinv_dot \
                     + 0.5 * pauto_kinv_dot_rest
 
-                f = f - 0.5 * numTrials * logdet_K \
+                f[i] = f[i] - 0.5 * numTrials * logdet_K \
                     - 0.5 * (PautoSUM * Kinv).sum()
 
-            f = -f
-            # exp(p) is needed because we're computing gradients with
-            # respect to log(tau_), rather than tau_
-            df = -dEdtau * np.exp(p)
-            f_list.append(f)
-            df_list.append(df)
-
-        return f_list, df_list
+        f_arr = -f
+        df_arr = -dEdtheta
+        return f_arr, df_arr
 
     def _segment_by_trial(self, seqs, Z, fn):
         """

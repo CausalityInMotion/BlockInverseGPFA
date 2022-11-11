@@ -121,7 +121,6 @@ class TestGPFA(unittest.TestCase):
         # get latents sequence and data log_likelihood
         self.latent_seqs, self.ll = self.gpfa._infer_latents(self.X)
 
-    # @unittest.skip("skipping")
     def test_infer_latents(self):
         """
         Test the GPFA mean and covariance using the equation
@@ -181,12 +180,11 @@ class TestGPFA(unittest.TestCase):
         """
         Test the data log_likelihood
         """
-        test_ll = -4092.076151443287
+        test_ll = -4092.0761173348656
         ll = self.ll
         # Assert
         self.assertEqual(test_ll, ll)
 
-    # @unittest.skip("skipping")
     def test_orthonormalized_transform(self):
         """
         Test GPFA orthonormalization transform of the parameter `C`.
@@ -196,7 +194,6 @@ class TestGPFA(unittest.TestCase):
         # Assert
         self.assertTrue(np.allclose(c_orth, corth))
 
-    # @unittest.skip("skipping")
     def test_orthonormalized_latents(self):
         """
         Test GPFA orthonormalization functions applied in `gpfa.predict`.
