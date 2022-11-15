@@ -28,7 +28,6 @@ orthonormalization of the matrix C
 3) prediction and orthonormalization of the corresponding subspace,
 for visualization purposes
 
-
 Original code
 -------------
 The code was ported from the MATLAB code based on Byron Yu's implementation.
@@ -57,11 +56,9 @@ from sklearn.gaussian_process.kernels import Kernel
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 from sklearn.gaussian_process.kernels import ConstantKernel
 
-
 __all__ = [
     "GPFA"
 ]
-
 
 class GPFA(sklearn.base.BaseEstimator):
     """
@@ -105,6 +102,9 @@ class GPFA(sklearn.base.BaseEstimator):
         where only kernel hyperparameters not marked as 'fixed'
         are learned - in this case only the `length scale`
         of the RBF kernel.
+        Note that the `gp_kernel` can either be a single kernel
+        (in which case it will be replicated across all latent dimensions),
+        or a sequence of kernels, one per latent dimension
     min_var_frac : float, optional
         fraction of overall data variance for each observed dimension to set as
         the private variance floor.  This is used to combat Heywood cases,
@@ -131,6 +131,10 @@ class GPFA(sklearn.base.BaseEstimator):
         Names of the data contained in the resultant data structure, used to
         check the validity of users' request
     Estimated model parameters. Updated when calling `fit()` method.
+        self.gp_kernel.theta : numpy.array
+            the flattened and log-transformed non-fixed hyperparams
+            to which optimization is performed,
+            where :math:`theta = log(kernel parameters)`
         d_ : (#x_dim, 1) numpy.ndarray
             observation mean
         C_ : (#x_dim, #z_dim) numpy.ndarray
@@ -217,17 +221,9 @@ class GPFA(sklearn.base.BaseEstimator):
 
     """
 
-    def __init__(
-                self,
-                bin_size=0.02,
-                gp_kernel=None,
-                z_dim=3,
-                min_var_frac=0.01,
-                em_tol=1.0E-8,
-                em_max_iters=500,
-                freq_ll=5,
-                verbose=False
-                 ):
+    def __init__(self, bin_size=0.02, gp_kernel=None, z_dim=3,
+                min_var_frac=0.01, em_tol=1.0E-8, em_max_iters=500,
+                freq_ll=5, verbose=False):
         self.bin_size = bin_size
         self.z_dim = z_dim
         self.gp_kernel = gp_kernel
@@ -243,6 +239,9 @@ class GPFA(sklearn.base.BaseEstimator):
             'X')
         self.verbose = verbose
 
+        # ==================================
+        # Initialize state model parameters
+        # ==================================
         # will be updated later
         if self.gp_kernel is None:  # Use an RBF kernel as default
             self.gp_kernel = ConstantKernel(
@@ -257,6 +256,10 @@ class GPFA(sklearn.base.BaseEstimator):
             self.gp_kernel = [
                 clone(self.gp_kernel) for _ in range(self.z_dim)
                 ]
+        elif len(self.gp_kernel) != self.z_dim:
+            raise ValueError(f"The sequence length of gp_kernel \
+                {len(self.gp_kernel)} doesn't match with the number of \
+                    latent dimensions {self.z_dim}")
         self.fit_info_ = {}
         self.train_latent_seqs_ = None
 
@@ -964,8 +967,8 @@ class GPFA(sklearn.base.BaseEstimator):
         tsdt = np.arange(0, n_timesteps) * self.bin_size
 
         for i in range(self.z_dim):
-            k = self.gp_kernel[i].__call__(tsdt[:,np.newaxis])
-            K_big[i::self.z_dim, i::self.z_dim] = k
+            K = self.gp_kernel[i].__call__(tsdt[:,np.newaxis])
+            K_big[i::self.z_dim, i::self.z_dim] = K
 
         return K_big
 
@@ -1047,7 +1050,7 @@ class GPFA(sklearn.base.BaseEstimator):
         theta : numpy.array
             the flattened and log-transformed non-fixed hyperparams
             to which optimization is performed,
-            where :math:`theta = log(timescale)`
+            where :math:`theta = log(kernel parameters)`
         gp_kernel_i : kernel instance
             the i-th GP kernel corresponding to the i-th latent variable
         pre_comp : numpy.recarray
