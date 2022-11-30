@@ -60,6 +60,7 @@ __all__ = [
     "GPFA"
 ]
 
+
 class GPFA(sklearn.base.BaseEstimator):
     """
     Apply Gaussian process factor analysis (GPFA) to observed data
@@ -222,8 +223,8 @@ class GPFA(sklearn.base.BaseEstimator):
     """
 
     def __init__(self, bin_size=0.02, gp_kernel=None, z_dim=3,
-                min_var_frac=0.01, em_tol=1.0E-8, em_max_iters=500,
-                freq_ll=5, verbose=False):
+                 min_var_frac=0.01, em_tol=1.0E-8, em_max_iters=500,
+                 freq_ll=5, verbose=False):
         self.bin_size = bin_size
         self.z_dim = z_dim
         self.gp_kernel = gp_kernel
@@ -250,16 +251,18 @@ class GPFA(sklearn.base.BaseEstimator):
                     0.001, constant_value_bounds='fixed'
                     ) * WhiteKernel(
                         noise_level=1, noise_level_bounds='fixed'
-                        )
+                            )
 
         if isinstance(self.gp_kernel, Kernel):
             self.gp_kernel = [
                 clone(self.gp_kernel) for _ in range(self.z_dim)
                 ]
         elif len(self.gp_kernel) != self.z_dim:
-            raise ValueError(f"The sequence length of gp_kernel \
-                {len(self.gp_kernel)} doesn't match with the number of \
-                    latent dimensions {self.z_dim}")
+            raise ValueError(
+                "The sequence length of gp_kernel:"
+                f"{len(self.gp_kernel)}, doesn't match with the"
+                f"number of latent dimensions: {self.z_dim}."
+                )
         self.fit_info_ = {}
         self.train_latent_seqs_ = None
 

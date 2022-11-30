@@ -8,7 +8,8 @@ GPFA Unittests.
 import unittest
 import numpy as np
 from scipy import linalg
-from gpfa import GPFA 
+from gpfa import GPFA
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel
 
 
 class TestGPFA(unittest.TestCase):
@@ -97,29 +98,54 @@ class TestGPFA(unittest.TestCase):
 
             return seqs
 
+        # ==================================================
+        # generate data
+        # ==================================================
         rates_a = (2, 10, 2, 2)
         rates_b = (2, 2, 10, 2)
         trial_lens = [8, 10]
 
-        # generate data
         self.X = gen_test_data(trial_lens, rates_a, rates_b)
 
         # get the number of time steps for each trial
         self.T = np.array([X_n.shape[1] for X_n in self.X])
         self.t_half = int(np.ceil(self.T[0] / 2.0))
 
+        # ==================================================
         # initialize GPFA
+        # ==================================================
+        seq_kernel = [ConstantKernel(
+                        1-0.001, constant_value_bounds='fixed'
+                        ) * RBF(length_scale=0.1) + ConstantKernel(
+                            0.001, constant_value_bounds='fixed'
+                            ) * WhiteKernel(
+                                noise_level=1, noise_level_bounds='fixed'
+                                    ), ConstantKernel(
+                        1-0.001, constant_value_bounds='fixed'
+                        ) * RBF(length_scale=0.1) + ConstantKernel(
+                            0.001, constant_value_bounds='fixed'
+                            ) * WhiteKernel(
+                                noise_level=1, noise_level_bounds='fixed'
+                                    )]
         self.gpfa = GPFA(
             bin_size=self.bin_size, z_dim=self.z_dim,
             em_max_iters=self.n_iters
             )
+        self.gpfa_with_seq_kernel = GPFA(
+            bin_size=self.bin_size, z_dim=self.z_dim,
+            gp_kernel=seq_kernel,
+            em_max_iters=self.n_iters
+            )
         # fit the model
         self.gpfa.fit(self.X)
+        self.gpfa_with_seq_kernel.fit(self.X)
         self.results, _ = self.gpfa.predict(
                                 returned_data=['pZ_mu', 'pZ_mu_orth'])
 
         # get latents sequence and data log_likelihood
         self.latent_seqs, self.ll = self.gpfa._infer_latents(self.X)
+        self.latent_seqs_seqkernel, self.ll_seq_kernel = \
+            self.gpfa_with_seq_kernel._infer_latents(self.X)
 
     def test_infer_latents(self):
         """
@@ -166,14 +192,18 @@ class TestGPFA(unittest.TestCase):
                         idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
 
             test_latent_seqs[n]['pZ_cov'] = cov
-        # get mean and covariance as implemented by GPFA
-        latent_seqs = self.latent_seqs
         # Assert
         self.assertTrue(np.allclose(
-                latent_seqs['pZ_mu'][0],
+                self.latent_seqs['pZ_mu'][0],
                 test_latent_seqs['pZ_mu'][0]))
         self.assertTrue(np.allclose(
-                latent_seqs['pZ_cov'][0],
+                self.latent_seqs_seqkernel['pZ_mu'][0],
+                test_latent_seqs['pZ_mu'][0]))
+        self.assertTrue(np.allclose(
+                self.latent_seqs['pZ_cov'][0],
+                test_latent_seqs['pZ_cov'][0]))
+        self.assertTrue(np.allclose(
+                self.latent_seqs_seqkernel['pZ_cov'][0],
                 test_latent_seqs['pZ_cov'][0]))
 
     def test_data_loglikelihood(self):
@@ -181,9 +211,8 @@ class TestGPFA(unittest.TestCase):
         Test the data log_likelihood
         """
         test_ll = -4092.0761173348656
-        ll = self.ll
         # Assert
-        self.assertEqual(test_ll, ll)
+        self.assertEqual(test_ll, self.ll, self.ll_seq_kernel)
 
     def test_orthonormalized_transform(self):
         """
