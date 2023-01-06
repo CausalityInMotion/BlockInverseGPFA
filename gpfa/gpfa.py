@@ -259,8 +259,8 @@ class GPFA(sklearn.base.BaseEstimator):
                 ]
         elif len(self.gp_kernel) != self.z_dim:
             raise ValueError(
-                "The sequence length of gp_kernel:"
-                f"{len(self.gp_kernel)}, doesn't match with the"
+                "The sequence length of gp_kernel: "
+                f"{len(self.gp_kernel)}, doesn't match with the "
                 f"number of latent dimensions: {self.z_dim}."
                 )
         self.fit_info_ = {}
@@ -970,7 +970,7 @@ class GPFA(sklearn.base.BaseEstimator):
         tsdt = np.arange(0, n_timesteps) * self.bin_size
 
         for i in range(self.z_dim):
-            K = self.gp_kernel[i].__call__(tsdt[:,np.newaxis])
+            K = self.gp_kernel[i](tsdt[:,np.newaxis])
             K_big[i::self.z_dim, i::self.z_dim] = K
 
         return K_big
