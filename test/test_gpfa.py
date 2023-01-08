@@ -8,7 +8,8 @@ GPFA Unittests.
 import unittest
 import numpy as np
 from scipy import linalg
-from gpfa import GPFA 
+from gpfa import GPFA
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel
 
 
 class TestGPFA(unittest.TestCase):
@@ -97,54 +98,102 @@ class TestGPFA(unittest.TestCase):
 
             return seqs
 
+        # ==================================================
+        # generate data
+        # ==================================================
         rates_a = (2, 10, 2, 2)
         rates_b = (2, 2, 10, 2)
         trial_lens = [8, 10]
 
-        # generate data
         self.X = gen_test_data(trial_lens, rates_a, rates_b)
 
         # get the number of time steps for each trial
         self.T = np.array([X_n.shape[1] for X_n in self.X])
         self.t_half = int(np.ceil(self.T[0] / 2.0))
 
+        # ==================================================
         # initialize GPFA
+        # ==================================================
+        multi_params_kernel = ConstantKernel(
+                        1-0.001, constant_value_bounds='fixed'
+                        ) * RBF(length_scale=0.1) + ConstantKernel(
+                            0.001, constant_value_bounds='fixed'
+                            ) * WhiteKernel(
+                                noise_level=1
+                                )
+        seq_kernel = [ConstantKernel(
+                        1-0.001, constant_value_bounds='fixed'
+                        ) * RBF(length_scale=0.1) + ConstantKernel(
+                            0.001, constant_value_bounds='fixed'
+                            ) * WhiteKernel(
+                                noise_level=1, noise_level_bounds='fixed'
+                                ),
+                      ConstantKernel(
+                        1-0.001, constant_value_bounds='fixed'
+                        ) * RBF(length_scale=0.1) + ConstantKernel(
+                            0.001, constant_value_bounds='fixed'
+                            ) * WhiteKernel(
+                                noise_level=1, noise_level_bounds='fixed'
+                                    )]
         self.gpfa = GPFA(
             bin_size=self.bin_size, z_dim=self.z_dim,
             em_max_iters=self.n_iters
             )
+        self.gpfa_with_seq_kernel = GPFA(
+            bin_size=self.bin_size, z_dim=self.z_dim,
+            gp_kernel=seq_kernel,
+            em_max_iters=self.n_iters
+            )
+        self.gpfa_with_multi_params_kernel = GPFA(
+            bin_size=self.bin_size, z_dim=self.z_dim,
+            gp_kernel=multi_params_kernel,
+            em_max_iters=self.n_iters
+            )
         # fit the model
         self.gpfa.fit(self.X)
+        self.gpfa_with_multi_params_kernel.fit(self.X)
+        self.gpfa_with_seq_kernel.fit(self.X)
         self.results, _ = self.gpfa.predict(
                                 returned_data=['pZ_mu', 'pZ_mu_orth'])
 
         # get latents sequence and data log_likelihood
         self.latent_seqs, self.ll = self.gpfa._infer_latents(self.X)
+        self.latent_seqs_multiparamskern, self.ll_multiparams_kernel = \
+            self.gpfa_with_multi_params_kernel._infer_latents(self.X)
+        self.latent_seqs_seqkernel, self.ll_seq_kernel = \
+            self.gpfa_with_seq_kernel._infer_latents(self.X)
 
-    def test_infer_latents(self):
+    def create_mu_and_cov(self, gpfa_inst):
         """
-        Test the GPFA mean and covariance using the equation
+        Create the GPFA mean and covariance using the equation
         A5 from the Byron et a,. (2009) paper since the
-        implementation is different from equation A5.
-        Here mean is defined by (K_inv + C'R_invC)^-1 * C'R_inv * (y - d)
+        implementation is different from equation A5. Here mean is
+        defined by (K_inv + C'R_invC)^-1 * C'R_inv * (y - d)
         and covaraince is (K_inv + C'R_invC)
+
+        Paramters:
+        gpfa_inst : GPFA instance
+            Each istance is different based on the input params
+        Returns:
+        test_latent_seqs: numpy.ndarray
+            GPFA mean and cov
         """
         test_latent_seqs = np.empty(
             len(self.X), dtype=[('pZ_mu', object), ('pZ_cov', object)])
 
         for n, t in enumerate(self.T):
             # get the kernal as defined in GPFA
-            k_big = self.gpfa._make_k_big(n_timesteps=t)
+            k_big = gpfa_inst._make_k_big(n_timesteps=t)
             k_big_inv = linalg.inv(k_big)
-            rinv = np.diag(1.0 / np.diag(self.gpfa.R_))
-            c_rinv = self.gpfa.C_.T.dot(rinv)
+            rinv = np.diag(1.0 / np.diag(gpfa_inst.R_))
+            c_rinv = gpfa_inst.C_.T.dot(rinv)
 
             # C'R_invC
-            c_rinv_c = c_rinv.dot(self.gpfa.C_)
+            c_rinv_c = c_rinv.dot(gpfa_inst.C_)
 
             # subtract mean from activities (y - d)
             dif = np.hstack([self.X[n]]) - \
-                self.gpfa.d_[:, np.newaxis]
+                gpfa_inst.d_[:, np.newaxis]
             # C'R_inv * (y - d)
             term1_mat = c_rinv.dot(dif).reshape(
                                         (self.z_dim * t, -1), order='F')
@@ -166,24 +215,49 @@ class TestGPFA(unittest.TestCase):
                         idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
 
             test_latent_seqs[n]['pZ_cov'] = cov
-        # get mean and covariance as implemented by GPFA
-        latent_seqs = self.latent_seqs
+            return test_latent_seqs
+
+    def test_infer_latents(self):
+        """
+        Test the mean and cov for different GPFA instances
+        """
+        # get test mean and cov for different GPFA instances
+        test_latent_seqs_gpfa = self.create_mu_and_cov(self.gpfa)
+        test_latent_seqs_seq_kern = self.create_mu_and_cov(
+            self.gpfa_with_seq_kernel
+        )
+        test_latent_seqs_multiparams = self.create_mu_and_cov(
+            self.gpfa_with_multi_params_kernel
+        )
         # Assert
         self.assertTrue(np.allclose(
-                latent_seqs['pZ_mu'][0],
-                test_latent_seqs['pZ_mu'][0]))
+                self.latent_seqs['pZ_mu'][0],
+                test_latent_seqs_gpfa['pZ_mu'][0]))
         self.assertTrue(np.allclose(
-                latent_seqs['pZ_cov'][0],
-                test_latent_seqs['pZ_cov'][0]))
+                self.latent_seqs['pZ_cov'][0],
+                test_latent_seqs_gpfa['pZ_cov'][0]))
+        self.assertTrue(np.allclose(
+                self.latent_seqs_seqkernel['pZ_mu'][0],
+                test_latent_seqs_seq_kern['pZ_mu'][0]))
+        self.assertTrue(np.allclose(
+                self.latent_seqs_seqkernel['pZ_cov'][0],
+                test_latent_seqs_seq_kern['pZ_cov'][0]))
+        self.assertTrue(np.allclose(
+                self.latent_seqs_multiparamskern['pZ_mu'][0],
+                test_latent_seqs_multiparams['pZ_mu'][0]))
+        self.assertTrue(np.allclose(
+                self.latent_seqs_multiparamskern['pZ_cov'][0],
+                test_latent_seqs_multiparams['pZ_cov'][0]))
 
     def test_data_loglikelihood(self):
         """
         Test the data log_likelihood
         """
-        test_ll = -4092.0761173380097
-        ll = self.ll
+        test_ll = -4092.0761173348656
         # Assert
-        self.assertEqual(test_ll, ll)
+        self.assertEqual(test_ll, self.ll)
+        self.assertEqual(test_ll, self.ll_seq_kernel)
+        self.assertGreater(self.ll_multiparams_kernel, test_ll)
 
     def test_orthonormalized_transform(self):
         """

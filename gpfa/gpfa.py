@@ -28,7 +28,6 @@ orthonormalization of the matrix C
 3) prediction and orthonormalization of the corresponding subspace,
 for visualization purposes
 
-
 Original code
 -------------
 The code was ported from the MATLAB code based on Byron Yu's implementation.
@@ -44,17 +43,18 @@ from __future__ import division, print_function, unicode_literals
 
 import time
 import warnings
-
-import numpy as np
-import scipy.linalg as linalg
-import scipy.optimize as optimize
-from tqdm import trange
 import sklearn
 import scipy as sp
+import numpy as np
+from tqdm import trange
+from sklearn.base import clone
+import scipy.linalg as linalg
+import scipy.optimize as optimize
 from sklearn.utils.extmath import fast_logdet
 from sklearn.decomposition import FactorAnalysis
-from sklearn.metrics.pairwise import rbf_kernel
-
+from sklearn.gaussian_process.kernels import Kernel
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel
+from sklearn.gaussian_process.kernels import ConstantKernel
 
 __all__ = [
     "GPFA"
@@ -94,6 +94,18 @@ class GPFA(sklearn.base.BaseEstimator):
     bin_size : float, optional
         observed data bin width in sec
         Default: 0.02
+    gp_kernel : kernel instance, default=None
+        If None is passed, the kernel defaults to
+        ConstantKernel(1-0.001, constant_value_bounds='fixed')
+        * RBF(length_scale=0.1)
+        + ConstantKernel(0.001, constant_value_bounds='fixed')
+        * WhiteKernel(noise_level=1, noise_level_bounds='fixed')
+        where only kernel hyperparameters not marked as 'fixed'
+        are learned - in this case only the `length scale`
+        of the RBF kernel.
+        Note that the `gp_kernel` can either be a single kernel
+        (in which case it will be replicated across all latent dimensions),
+        or a sequence of kernels, one per latent dimension
     min_var_frac : float, optional
         fraction of overall data variance for each observed dimension to set as
         the private variance floor.  This is used to combat Heywood cases,
@@ -106,12 +118,6 @@ class GPFA(sklearn.base.BaseEstimator):
     em_max_iters : int, optional
         number of EM iterations to run
         Default: 500
-    tau_init : float, optional
-        GP timescale initialization in sec
-        Default: 0.1
-    eps_init : float, optional
-        GP noise variance initialization
-        Default: 1e-3
     freq_ll : int, optional
         data likelihood is computed at every freq_ll EM iterations. freq_ll = 1
         means that data likelihood is computed at every iteration.
@@ -126,20 +132,17 @@ class GPFA(sklearn.base.BaseEstimator):
         Names of the data contained in the resultant data structure, used to
         check the validity of users' request
     Estimated model parameters. Updated when calling `fit()` method.
-    covType_ : str
-        type of GP covariance, either 'rbf', 'tri', or 'logexp'.
-        Currently, only 'rbf' is supported.
-    tau_ : : (1, #z_dim) numpy.ndarray
-        GP timescale in sec
-    eps_ : (1, #z_dim) numpy.ndarray
-        GP noise variances
-    d_ : (#x_dim, 1) numpy.ndarray
-        observation mean
-    C_ : (#x_dim, #z_dim) numpy.ndarray
-        loading matrix, representing the mapping between the observed data
-        space and the latent variable space
-    R_ : (#x_dim, #x_dim) numpy.ndarray
-        observation noise covariance
+        self.gp_kernel.theta : numpy.array
+            the flattened and log-transformed non-fixed hyperparams
+            to which optimization is performed,
+            where :math:`theta = log(kernel parameters)`
+        d_ : (#x_dim, 1) numpy.ndarray
+            observation mean
+        C_ : (#x_dim, #z_dim) numpy.ndarray
+            loading matrix, representing the mapping between the observed data
+            space and the latent variable space
+        R_ : (#x_dim, #x_dim) numpy.ndarray
+            observation noise covariance
     fit_info_ : dict
         Information of the fitting process. Updated at each run of the fit()
         method.
@@ -219,14 +222,13 @@ class GPFA(sklearn.base.BaseEstimator):
 
     """
 
-    def __init__(self, bin_size=0.02, z_dim=3, min_var_frac=0.01,
-                 tau_init=0.1, eps_init=1.0E-3, em_tol=1.0E-8,
-                 em_max_iters=500, freq_ll=5, verbose=False):
+    def __init__(self, bin_size=0.02, gp_kernel=None, z_dim=3,
+                 min_var_frac=0.01, em_tol=1.0E-8, em_max_iters=500,
+                 freq_ll=5, verbose=False):
         self.bin_size = bin_size
         self.z_dim = z_dim
+        self.gp_kernel = gp_kernel
         self.min_var_frac = min_var_frac
-        self.tau_init = tau_init
-        self.eps_init = eps_init
         self.em_tol = em_tol
         self.em_max_iters = em_max_iters
         self.freq_ll = freq_ll
@@ -238,7 +240,29 @@ class GPFA(sklearn.base.BaseEstimator):
             'X')
         self.verbose = verbose
 
+        # ==================================
+        # Initialize state model parameters
+        # ==================================
         # will be updated later
+        if self.gp_kernel is None:  # Use an RBF kernel as default
+            self.gp_kernel = ConstantKernel(
+                1-0.001, constant_value_bounds='fixed'
+                ) * RBF(length_scale=0.1) + ConstantKernel(
+                    0.001, constant_value_bounds='fixed'
+                    ) * WhiteKernel(
+                        noise_level=1, noise_level_bounds='fixed'
+                            )
+
+        if isinstance(self.gp_kernel, Kernel):
+            self.gp_kernel = [
+                clone(self.gp_kernel) for _ in range(self.z_dim)
+                ]
+        elif len(self.gp_kernel) != self.z_dim:
+            raise ValueError(
+                "The sequence length of gp_kernel: "
+                f"{len(self.gp_kernel)}, doesn't match with the "
+                f"number of latent dimensions: {self.z_dim}."
+                )
         self.fit_info_ = {}
         self.train_latent_seqs_ = None
 
@@ -303,15 +327,6 @@ class GPFA(sklearn.base.BaseEstimator):
             print(f'Latent space dimensionality: {self.z_dim}')
             print(f'Observation dimensionality: {X_all.any(axis=1).sum()}')
 
-        # ==================================
-        # Initialize state model parameters
-        # ==================================
-        self.covType_ = 'rbf'
-        # GP timescale
-        self.tau_ = self.tau_init * np.ones(self.z_dim)
-        # GP noise variance
-        self.eps_ = self.eps_init * np.ones(self.z_dim)
-
         # ========================================
         # Initialize observation model parameters
         # ========================================
@@ -329,7 +344,6 @@ class GPFA(sklearn.base.BaseEstimator):
         # Define parameter constraints
         self.notes_ = {
             'learnKernelParams': True,
-            'learnGPNoise': False,
             'RforceDiagonal': True,
         }
 
@@ -543,18 +557,22 @@ class GPFA(sklearn.base.BaseEstimator):
             sum_Xall = X_all.sum(axis=1)[:, np.newaxis]
 
             # term is (z_dim+1) x (z_dim+1)
-            term = np.vstack([np.hstack([sum_p_auto, sum_Zall]),
-                             np.hstack([sum_Zall.T, T.sum().reshape((1, 1))])])
+            term = np.vstack(
+                    [np.hstack([sum_p_auto, sum_Zall]),
+                    np.hstack([sum_Zall.T, T.sum().reshape((1, 1))])]
+                    )
             # x_dim x (z_dim+1)
-            cd = np.linalg.solve(term.T, np.hstack([sum_XZtrans, sum_Xall]).T).T
+            cd = np.linalg.solve(
+                term.T, np.hstack([sum_XZtrans, sum_Xall]).T).T
 
             self.C_ = cd[:, :self.z_dim]
             self.d_ = cd[:, -1]
 
             # xd must be based on the new d
             # xd = X * d
-            # R = (X * X.T - 2 * xd * ((sum_XZtrans - d.dot(sum_Zall.T)) * c).sum(axis=1)) /
-            #           Tall.sum()
+            # R = (X * X.T - 2 * xd * (
+            #   (sum_XZtrans - d.dot(sum_Zall.T)) * c).sum(axis=1)
+            #   ) * Tall.sum()
             c = self.C_
             d = self.d_[:, np.newaxis]
             if self.notes_['RforceDiagonal']:
@@ -742,29 +760,21 @@ class GPFA(sklearn.base.BaseEstimator):
         ----------
         latent_seqs : numpy.recarray
             data structure containing trajectories;
-
-        Raises
-        ------
-        ValueError
-            If covType_ != 'rbf'`.
-            If `notes_['learnGPNoise']` set to True.
-
         """
-        if self.covType_ != 'rbf':
-            raise ValueError("Only 'rbf' GP covariance type is supported.")
-        if self.notes_['learnGPNoise']:
-            raise ValueError("learnGPNoise is not supported.")
-
         precomp = self._make_precomp(latent_seqs)
 
         # Loop once for each state dimension (each GP)
         for i in range(self.z_dim):
-            const = {'eps': self.eps_[i]}
-            init_tau = np.log(self.tau_[i])
-            res_opt = optimize.minimize(self._grad_bettau, init_tau,
-                                        args=(precomp[i], const),
-                                        method='L-BFGS-B', jac=True)
-            self.tau_[i] = np.exp(res_opt.x)
+            gp_kernel_i = self.gp_kernel[i]
+            init_theta = self.gp_kernel[i].theta
+            res_opt = optimize.minimize(
+                        self._grad_bet_theta,
+                        init_theta,
+                        args=(gp_kernel_i, precomp[i]),
+                        method='L-BFGS-B',
+                        jac=True
+                        )
+            self.gp_kernel[i].theta = res_opt.x
 
             if self.verbose:
                 print(f'\n Converged p; z_dim:{i}, p:{res_opt.x}')
@@ -949,26 +959,18 @@ class GPFA(sklearn.base.BaseEstimator):
             number of timesteps
         Returns
         -------
-        K_big : np.ndarray
+        K_big : numpy.ndarray
             GP covariance matrix with dimensions (z_dim * T) x (z_dim * T).
             The (t1, t2) block is diagonal, has dimensions z_dim x z_dim, and
             represents the covariance between the state vectors at timesteps
             t1 and t2. K_big is sparse and striped.
-        Raises
-        ------
-        ValueError
-            If covType_ != 'rbf'`.
         """
-        if self.covType_ != 'rbf':
-            raise ValueError("Only 'rbf' GP covariance type is supported.")
 
         K_big = np.zeros((self.z_dim * n_timesteps, self.z_dim * n_timesteps))
-        ts = np.arange(0, n_timesteps)
-        TdifSq = ((ts - ts[:, np.newaxis]) * self.bin_size)**2
+        tsdt = np.arange(0, n_timesteps) * self.bin_size
 
         for i in range(self.z_dim):
-            K = (1 - self.eps_[i]) * np.exp(-0.5 * TdifSq / self.tau_[i]**2) \
-                + self.eps_[i] * np.eye(n_timesteps)
+            K = self.gp_kernel[i](tsdt[:,np.newaxis])
             K_big[i::self.z_dim, i::self.z_dim] = K
 
         return K_big
@@ -993,7 +995,7 @@ class GPFA(sklearn.base.BaseEstimator):
         All inputs are named sensibly to those in `_learn_gp_params`.
         This code probably should not be called from anywhere but there.
 
-        We bother with this method because we need this particular matrix sum to 
+        We bother with this method because we need this particular matrix sum to
         be as fast as possible.  Thus, no error checking is done here as that
         would add needless computation. Instead, the onus is on the caller (which
         should be `_learn_gp_params()`) to make sure this is called correctly.
@@ -1002,17 +1004,15 @@ class GPFA(sklearn.base.BaseEstimator):
         """
         Tall = np.array([X_n.shape[1] for X_n in Seqs['X']])
         Tmax = max(Tall)
-        ts = np.arange(0, Tmax)
-        TdifSq = ((ts - ts[:, np.newaxis]) * self.bin_size)**2
+        Tsdt = np.arange(0, Tmax) * self.bin_size
 
         # assign some helpful precomp items
         # this is computationally cheap, so we keep a few loops in MATLAB
         # for ease of readability.
         precomp = np.empty(self.z_dim, dtype=[(
-            'TdifSq', object), ('Tmax', object), ('Tu', object)])
+            'Tsdt', object), ('Tu', object)])
         for i in range(self.z_dim):
-            precomp[i]['TdifSq'] = TdifSq
-            precomp[i]['Tmax'] = Tmax
+            precomp[i]['Tsdt'] = Tsdt[:,np.newaxis]
         # find unique numbers of trial lengths
         trial_lengths_num_unique = np.unique(Tall)
         # Loop once for each state dimension (each GP)
@@ -1039,80 +1039,77 @@ class GPFA(sklearn.base.BaseEstimator):
                 for n in precomp[i]['Tu'][j]['nList']:
                     precomp[i]['Tu'][j]['PautoSUM'] += \
                         Seqs[n]['pZ_covGP'][:, :, i] \
-                        + np.outer(Seqs[n]['pZ_mu'][i, :], Seqs[n]['pZ_mu'][i, :])
+                        + np.outer(
+                            Seqs[n]['pZ_mu'][i, :], Seqs[n]['pZ_mu'][i, :]
+                            )
         return precomp
 
-    def _grad_bettau(self, p, pre_comp, const):
+    def _grad_bet_theta(self, theta, gp_kernel_i, pre_comp):
         """
         Gradient computation for GP timescale optimization.
         This function is called by minimize.m.
         Parameters
         ----------
-        p : float
-            variable with respect to which optimization is performed,
-            where :math:`p = log(timescale)`
+        theta : numpy.array
+            the flattened and log-transformed non-fixed hyperparams
+            to which optimization is performed,
+            where :math:`theta = log(kernel parameters)`
+        gp_kernel_i : kernel instance
+            the i-th GP kernel corresponding to the i-th latent variable
         pre_comp : numpy.recarray
             structure containing precomputations
-        const : dict
-            contains hyperparameters
         Returns
         -------
-        f : float
-            value of objective function E[log P({x},{y})] at p
-        df : float
-            gradient at p
+        f : numpy.array
+            values of objective function E[log P({x},{y})] at theta
+        df : numpy.array
+            gradients at theta
         """
-        Tmax = pre_comp['Tmax']
-
-        # temp is Tmax x Tmax
-        temp = (1 - const['eps']) * np.exp(-0.5 * pre_comp['TdifSq'] * np.exp(2 * -p))
-        Kmax = temp + const['eps'] * np.eye(Tmax)
-        dKdtau_max = (temp * pre_comp['TdifSq']) * np.exp(3 * -p)
-
-        dEdtau = 0
-        f = 0
+        gp_kernel_i.theta = theta
+        Kmax, K_gradient = gp_kernel_i(
+            pre_comp['Tsdt'], eval_gradient=True
+            )
+        dEdtheta, f = np.zeros(len(theta)), np.zeros(len(theta))
         for j in range(len(pre_comp['Tu'])):
             T = pre_comp['Tu'][j]['T']
-            if T == pre_comp['Tu'][0]['T']:
-                Kinv = np.linalg.inv(Kmax[:T, :T])
+            if j == 0:
+                Kinv = linalg.inv(Kmax[:T, :T])
                 logdet_K = fast_logdet(Kmax[:T, :T])
             else:
                 # Here, we compute the inverse of K for the current
-                # t from its known inverse for the previous t,
+                # T from its known inverse for the previous T,
                 # using block matrix inversion identities.
                 Kinv, logdet_K = self._sym_block_inversion(
                     Kmax[:T, :T], Kinv, -logdet_K
                 )
-
             Thalf = int(np.ceil(T / 2.0))
 
-            KinvM = Kinv[:Thalf, :].dot(dKdtau_max[:T, :T])  # Thalf x T
-            KinvMKinv = (KinvM.dot(Kinv)).T  # Thalf x T
+            for i, dKdtheta in enumerate(K_gradient.T):
 
-            dg_KinvM = np.diag(KinvM)
-            tr_KinvM = 2 * dg_KinvM.sum() - np.fmod(T, 2) * dg_KinvM[-1]
+                KinvM = Kinv[:Thalf, :].dot(dKdtheta[:T, :T])  # Thalf x T
+                KinvMKinv = (KinvM.dot(Kinv)).T  # Thalf x T
 
-            mkr = int(np.ceil(0.5 * T ** 2))
-            numTrials = pre_comp['Tu'][j]['numTrials']
-            PautoSUM = pre_comp['Tu'][j]['PautoSUM']
+                dg_KinvM = np.diag(KinvM)
+                tr_KinvM = 2 * dg_KinvM.sum() - np.fmod(T, 2) * dg_KinvM[-1]
 
-            pauto_kinv_dot = PautoSUM.ravel('F')[:mkr].dot(
-                KinvMKinv.ravel('F')[:mkr])
-            pauto_kinv_dot_rest = PautoSUM.ravel('F')[-1:mkr - 1:- 1].dot(
-                KinvMKinv.ravel('F')[:(T ** 2 - mkr)])
-            dEdtau = dEdtau - 0.5 * numTrials * tr_KinvM \
-                + 0.5 * pauto_kinv_dot \
-                + 0.5 * pauto_kinv_dot_rest
+                mkr = int(np.ceil(0.5 * T ** 2))
+                numTrials = pre_comp['Tu'][j]['numTrials']
+                PautoSUM = pre_comp['Tu'][j]['PautoSUM']
 
-            f = f - 0.5 * numTrials * logdet_K \
-                - 0.5 * (PautoSUM * Kinv).sum()
+                pauto_kinv_dot = PautoSUM.ravel('F')[:mkr].dot(
+                    KinvMKinv.ravel('F')[:mkr])
+                pauto_kinv_dot_rest = PautoSUM.ravel('F')[-1:mkr - 1:- 1].dot(
+                    KinvMKinv.ravel('F')[:(T ** 2 - mkr)])
+                dEdtheta[i] = dEdtheta[i] - 0.5 * numTrials * tr_KinvM \
+                    + 0.5 * pauto_kinv_dot \
+                    + 0.5 * pauto_kinv_dot_rest
 
-        f = -f
-        # exp(p) is needed because we're computing gradients with
-        # respect to log(tau_), rather than tau_
-        df = -dEdtau * np.exp(p)
+                f[i] = f[i] - 0.5 * numTrials * logdet_K \
+                    - 0.5 * (PautoSUM * Kinv).sum()
 
-        return f, df
+        f_arr = -f
+        df_arr = -dEdtheta
+        return f_arr, df_arr
 
     def _segment_by_trial(self, seqs, Z, fn):
         """
