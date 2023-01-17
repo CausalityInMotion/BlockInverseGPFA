@@ -520,11 +520,31 @@ class GPFA(sklearn.base.BaseEstimator):
                 posterior covariance over time for each latent
                 variable
         """
-        T = np.array([X_n.shape[1] for X_n in X])
         lls = []
         ll_old = ll_base = ll = 0.0
         iter_time = []
         var_floor = self.min_var_frac * np.diag(np.cov(np.hstack(X)))
+        Tall = np.array([X_n.shape[1] for X_n in X])
+        Tmax = max(Tall)
+        Tsdt = np.arange(0, Tmax) * self.bin_size
+        unique_trial_lengths = np.unique(Tall)
+
+        # ============== Make Precomp_init ==============
+        # assign some helpful precomp items
+        precomp_init = np.empty(self.z_dim, dtype=[(
+            'Tsdt', object), ('Tu', object)])
+
+        # Loop once for each state dimension (each GP)
+        for i in range(self.z_dim):
+            precomp_init[i]['Tsdt'] = Tsdt[:,np.newaxis]
+            precomp_Tu = np.empty(len(unique_trial_lengths), dtype=[(
+                'nList', object), ('T', int), ('numTrials', int),
+                ('PautoSUM', object)])
+            for j, trial_len_num in enumerate(unique_trial_lengths):
+                precomp_Tu[j]['nList'] = np.where(Tall == trial_len_num)[0]
+                precomp_Tu[j]['T'] = trial_len_num
+                precomp_Tu[j]['numTrials'] = len(precomp_Tu[j]['nList'])
+                precomp_init[i]['Tu'] = precomp_Tu
 
         # Loop once for each iteration of EM algorithm
         for iter_id in trange(1, self.em_max_iters + 1, desc='EM iteration',
@@ -559,7 +579,7 @@ class GPFA(sklearn.base.BaseEstimator):
             # term is (z_dim+1) x (z_dim+1)
             term = np.vstack(
                     [np.hstack([sum_p_auto, sum_Zall]),
-                    np.hstack([sum_Zall.T, T.sum().reshape((1, 1))])]
+                    np.hstack([sum_Zall.T, Tall.sum().reshape((1, 1))])]
                     )
             # x_dim x (z_dim+1)
             cd = np.linalg.solve(
@@ -580,7 +600,7 @@ class GPFA(sklearn.base.BaseEstimator):
                 xd = sum_Xall * d
                 term = ((sum_XZtrans - d.dot(sum_Zall.T)) * c).sum(axis=1)
                 term = term[:, np.newaxis]
-                r = d ** 2 + (sum_XXtrans - 2 * xd - term) / T.sum()
+                r = d ** 2 + (sum_XXtrans - 2 * xd - term) / Tall.sum()
 
                 # Set minimum private variance
                 r = np.maximum(var_floor, r)
@@ -589,12 +609,12 @@ class GPFA(sklearn.base.BaseEstimator):
                 sum_XXtrans = X_all.dot(X_all.T)
                 xd = sum_Xall.dot(d.T)
                 term = (sum_XZtrans - d.dot(sum_Zall.T)).dot(c.T)
-                r = d.dot(d.T) + (sum_XXtrans - xd - xd.T - term) / T.sum()
+                r = d.dot(d.T) + (sum_XXtrans - xd - xd.T - term) / Tall.sum()
 
                 self.R_ = (r + r.T) / 2  # ensure symmetry
 
             if self.notes_['learnKernelParams']:
-                self._learn_gp_params(latent_seqs)
+                self._learn_gp_params(latent_seqs, precomp_init)
 
             t_end = time.time() - tic
             iter_time.append(t_end)
@@ -604,13 +624,12 @@ class GPFA(sklearn.base.BaseEstimator):
                 ll_base = ll
             elif self.verbose and ll < ll_old:
                 print('\nError: Data likelihood has decreased ',
-                    'from {0} to {1}'.format(ll_old, ll))
+                    f'from {ll_old} to {ll}')
             elif (ll - ll_base) < (1 + self.em_tol) * (ll_old - ll_base):
                 break
 
         if len(lls) < self.em_max_iters:
-            print('Fitting has converged after {0} EM iterations.)'.format(
-                len(lls)))
+            print(f'Fitting has converged after {len(lls)} EM iterations.')
 
         if np.any(np.diag(self.R_) == var_floor):
             warnings.warn('Private variance floor used for one or more observed '
@@ -632,7 +651,7 @@ class GPFA(sklearn.base.BaseEstimator):
             experimental trial) of shape (#x_dim, #bins)
         get_ll : bool, optional
             specifies whether to compute data log likelihood (default: True)
-            Default : True 
+            Default : True
         Returns
         -------
         latent_seqs : numpy.recarray
@@ -679,11 +698,12 @@ class GPFA(sklearn.base.BaseEstimator):
         # Find the maximum trial length
         t_all = [X_n.shape[1] for X_n in X]
         t_uniq = np.unique(t_all)
-        t_max = max(t_uniq)
+        t_uniq_max = max(t_uniq)
         ll = 0.
+        # Tsdt = np.arange(0, t_uniq_max) * self.bin_size
 
-        K_big = self._make_k_big(t_max)
-        blah = [c_rinv_c for _ in range(t_max)]
+        K_big = self._make_k_big(t_uniq_max)
+        blah = [c_rinv_c for _ in range(t_uniq_max)]
         C_rinv_c_big = linalg.block_diag(*blah)  # (z_dim*T) x (z_dim*T)
 
         # Overview:
@@ -753,15 +773,18 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return latent_seqs
 
-    def _learn_gp_params(self, latent_seqs):
+    def _learn_gp_params(self, latent_seqs, precomp_init):
         """Updates parameters of GP state model, given trajectories.
 
         Parameters
         ----------
         latent_seqs : numpy.recarray
-            data structure containing trajectories;
+            data structure containing trajectories
+        precomp_init : numpy.recarray
+            The precomp_init struct will be updated with the
+            posterior covaraince and the other requirements.
         """
-        precomp = self._make_precomp(latent_seqs)
+        precomp = self._fill_p_auto_sum(latent_seqs, precomp_init)
 
         # Loop once for each state dimension (each GP)
         for i in range(self.z_dim):
@@ -975,7 +998,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return K_big
 
-    def _make_precomp(self, Seqs):
+    def _fill_p_auto_sum(self, Seqs, precomp):
         """
         Make the precomputation matrices specified by the GPFA algorithm.
 
@@ -983,12 +1006,14 @@ class GPFA(sklearn.base.BaseEstimator):
         ----------
         Seqs : numpy.recarray
             The sequence struct of inferred latents, etc.
+        precomp_init : numpy.recarray
+            The precomp_init struct will be updated with the
+            posterior covaraince and the other requirements.
 
         Returns
         -------
         precomp : numpy.recarray
-            The precomp struct will be updated with the posterior covaraince and
-            the other requirements.
+            Structure containing precomputations.
 
         Notes
         -----
@@ -1002,39 +1027,15 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Finally, see the notes in the GPFA README.
         """
-        Tall = np.array([X_n.shape[1] for X_n in Seqs['X']])
-        Tmax = max(Tall)
-        Tsdt = np.arange(0, Tmax) * self.bin_size
-
-        # assign some helpful precomp items
-        # this is computationally cheap, so we keep a few loops in MATLAB
-        # for ease of readability.
-        precomp = np.empty(self.z_dim, dtype=[(
-            'Tsdt', object), ('Tu', object)])
-        for i in range(self.z_dim):
-            precomp[i]['Tsdt'] = Tsdt[:,np.newaxis]
-        # find unique numbers of trial lengths
-        trial_lengths_num_unique = np.unique(Tall)
-        # Loop once for each state dimension (each GP)
-        for i in range(self.z_dim):
-            precomp_Tu = np.empty(len(trial_lengths_num_unique), dtype=[(
-                'nList', object), ('T', int), ('numTrials', int),
-                ('PautoSUM', object)])
-            for j, trial_len_num in enumerate(trial_lengths_num_unique):
-                precomp_Tu[j]['nList'] = np.where(Tall == trial_len_num)[0]
-                precomp_Tu[j]['T'] = trial_len_num
-                precomp_Tu[j]['numTrials'] = len(precomp_Tu[j]['nList'])
-                precomp_Tu[j]['PautoSUM'] = np.zeros((trial_len_num,
-                                                      trial_len_num))
-                precomp[i]['Tu'] = precomp_Tu
-
         ############################################################
         # Fill out PautoSum
         ############################################################
         # Loop once for each state dimension (each GP)
         for i in range(self.z_dim):
             # Loop once for each trial length (each of Tu)
-            for j in range(len(trial_lengths_num_unique)):
+            for j in range(len(precomp[i]['Tu'])):
+                precomp[i]['Tu'][j]['PautoSUM'] = np.zeros(
+                    (precomp[i]['Tu'][j]['T'], precomp[i]['Tu'][j]['T']))
                 # Loop once for each trial (each of nList)
                 for n in precomp[i]['Tu'][j]['nList']:
                     precomp[i]['Tu'][j]['PautoSUM'] += \
@@ -1106,7 +1107,6 @@ class GPFA(sklearn.base.BaseEstimator):
 
                 f[i] = f[i] - 0.5 * numTrials * logdet_K \
                     - 0.5 * (PautoSUM * Kinv).sum()
-
         f_arr = -f
         df_arr = -dEdtheta
         return f_arr, df_arr
