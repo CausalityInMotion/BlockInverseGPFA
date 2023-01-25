@@ -540,7 +540,7 @@ class GPFA(sklearn.base.BaseEstimator):
             precomp['Tu'][j]['nList'] = np.where(Tall == trial_len_num)[0]
             precomp['Tu'][j]['T'] = trial_len_num
             precomp['Tu'][j]['numTrials'] = len(precomp['Tu'][j]['nList'])
-            precomp['Tu'][j]['PautoSUM'] = np.zeros(
+            precomp['Tu'][j]['PautoSUM'] = np.empty(
                 (self.z_dim, precomp['Tu'][j]['T'], precomp['Tu'][j]['T']))
 
         # Loop once for each iteration of EM algorithm
@@ -739,7 +739,7 @@ class GPFA(sklearn.base.BaseEstimator):
             # T x T posterior covariance for each GP
             vsm_gp = np.full((self.z_dim, t, t), np.nan)
             for i in range(self.z_dim):
-                vsm_gp[i] = M_inv[i::self.z_dim, i::self.z_dim]
+                vsm_gp[i, :, :] = M_inv[i::self.z_dim, i::self.z_dim]
 
             # Process all trials with length T
             n_list = np.where(Tall == t)[0]
@@ -778,13 +778,13 @@ class GPFA(sklearn.base.BaseEstimator):
         latent_seqs : numpy.recarray
             data structure containing trajectories
         precomp : numpy.recarray
-            The precomp struct will be updated with the
-            posterior covaraince
+            The precomp structure will be updated with the
+            posterior covariance
         """
         precomp = self._fill_p_auto_sum(latent_seqs, precomp)
 
         # Loop once for each state dimension (each GP)
-        for i in range(self.z_dim): 
+        for i in range(self.z_dim):
             gp_kernel_i = self.gp_kernel[i]
             init_theta = self.gp_kernel[i].theta
             res_opt = optimize.minimize(
@@ -797,7 +797,7 @@ class GPFA(sklearn.base.BaseEstimator):
             self.gp_kernel[i].theta = res_opt.x
 
             for j in range(len(precomp['Tu'])):
-                    precomp['Tu'][j]['PautoSUM'][i].fill(0)
+                precomp['Tu'][j]['PautoSUM'][i, :, :].fill(0)
             if self.verbose:
                 print(f'\n Converged theta; z_dim:{i}, theta:{res_opt.x}')
 
@@ -1004,10 +1004,10 @@ class GPFA(sklearn.base.BaseEstimator):
         Parameters
         ----------
         Seqs : numpy.recarray
-            The sequence struct of inferred latents, etc.
+            The sequence structure of inferred latents, etc.
         precomp : numpy.recarray
-            The precomp struct will be updated with the
-            posterior covaraince.
+            The precomp structure will be updated with the
+            posterior covariance.
 
         Returns
         -------
@@ -1035,17 +1035,18 @@ class GPFA(sklearn.base.BaseEstimator):
             for j in range(len(precomp['Tu'])):
                 # Loop once for each trial (each of nList)
                 for n in precomp['Tu'][j]['nList']:
-                    precomp['Tu'][j]['PautoSUM'][i] += \
-                        Seqs[n]['pZ_covGP'][i] \
+                    precomp['Tu'][j]['PautoSUM'][i, :, :] += \
+                        Seqs[n]['pZ_covGP'][i, :, :] \
                         + np.outer(
                             Seqs[n]['pZ_mu'][i, :], Seqs[n]['pZ_mu'][i, :]
                             )
         return precomp
 
-    def _grad_bet_theta(self, theta, gp_kernel_i, precomp, ith_zdim_index):
+    def _grad_bet_theta(self, theta, gp_kernel_i, precomp, i):
         """
         Gradient computation for GP timescale optimization.
         This function is called by `_learn_gp_params()`
+
         Parameters
         ----------
         theta : numpy.array
@@ -1086,9 +1087,9 @@ class GPFA(sklearn.base.BaseEstimator):
             Thalf = int(np.ceil(T / 2.0))
             mkr = int(np.ceil(0.5 * T ** 2))
             numTrials = precomp['Tu'][j]['numTrials']
-            PautoSUM = precomp['Tu'][j]['PautoSUM'][ith_zdim_index, :, :]
+            PautoSUM = precomp['Tu'][j]['PautoSUM'][i, :, :]
 
-            for i, dKdtheta in enumerate(K_gradient.T):
+            for k, dKdtheta in enumerate(K_gradient.T):
 
                 KinvM = Kinv[:Thalf, :].dot(dKdtheta[:T, :T])  # Thalf x T
                 KinvMKinv = (KinvM.dot(Kinv)).T  # Thalf x T
@@ -1100,7 +1101,7 @@ class GPFA(sklearn.base.BaseEstimator):
                     KinvMKinv.ravel('F')[:mkr])
                 pauto_kinv_dot_rest = PautoSUM.ravel('F')[-1:mkr - 1:- 1].dot(
                     KinvMKinv.ravel('F')[:(T ** 2 - mkr)])
-                dEdtheta[i] = dEdtheta[i] - 0.5 * numTrials * tr_KinvM \
+                dEdtheta[k] = dEdtheta[k] - 0.5 * numTrials * tr_KinvM \
                     + 0.5 * pauto_kinv_dot \
                     + 0.5 * pauto_kinv_dot_rest
 
@@ -1108,6 +1109,7 @@ class GPFA(sklearn.base.BaseEstimator):
                     - 0.5 * (PautoSUM * Kinv).sum()
         f_arr = -f
         df_arr = -dEdtheta
+
         return f_arr, df_arr
 
     def _segment_by_trial(self, seqs, Z, fn):
