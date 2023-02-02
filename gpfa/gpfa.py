@@ -540,7 +540,7 @@ class GPFA(sklearn.base.BaseEstimator):
             precomp['Tu'][j]['nList'] = np.where(Tall == trial_len_num)[0]
             precomp['Tu'][j]['T'] = trial_len_num
             precomp['Tu'][j]['numTrials'] = len(precomp['Tu'][j]['nList'])
-            precomp['Tu'][j]['PautoSUM'] = np.empty(
+            precomp['Tu'][j]['PautoSUM'] = np.zeros(
                 (self.z_dim, precomp['Tu'][j]['T'], precomp['Tu'][j]['T']))
 
         # Loop once for each iteration of EM algorithm
@@ -1057,21 +1057,22 @@ class GPFA(sklearn.base.BaseEstimator):
             the i-th GP kernel corresponding to the i-th latent variable
         precomp : numpy.recarray
             structure containing precomputations
-        ith_zdim_index : int
+        i : int
             The i-th index of the i-th latent variable
 
         Returns
         -------
-        f : numpy.array
+        f : float
             values of objective function E[log P({x},{y})] at theta
-        df : numpy.array
+        df_arr : numpy.array
             gradients at theta
         """
         gp_kernel_i.theta = theta
         Kmax, K_gradient = gp_kernel_i(
             precomp['Tsdt'], eval_gradient=True
             )
-        dEdtheta, f = np.zeros(len(theta)), np.zeros(len(theta))
+        dEdtheta = np.zeros(len(theta))
+        f = 0.0
         for j in range(len(precomp['Tu'])):
             T = precomp['Tu'][j]['T']
             if j == 0:
@@ -1105,12 +1106,11 @@ class GPFA(sklearn.base.BaseEstimator):
                     + 0.5 * pauto_kinv_dot \
                     + 0.5 * pauto_kinv_dot_rest
 
-                f[i] = f[i] - 0.5 * numTrials * logdet_K \
-                    - 0.5 * (PautoSUM * Kinv).sum()
-        f_arr = -f
+            f = f - 0.5 * numTrials * logdet_K \
+                - 0.5 * (PautoSUM * Kinv).sum()
+        f = -f
         df_arr = -dEdtheta
-
-        return f_arr, df_arr
+        return f, df_arr
 
     def _segment_by_trial(self, seqs, Z, fn):
         """
