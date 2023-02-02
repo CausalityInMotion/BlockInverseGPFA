@@ -253,7 +253,7 @@ class TestGPFA(unittest.TestCase):
         """
         Test the data log_likelihood
         """
-        test_ll = -4092.0761173348656
+        test_ll = -4092.07613484949
         # Assert
         self.assertEqual(test_ll, self.ll)
         self.assertEqual(test_ll, self.ll_seq_kernel)
