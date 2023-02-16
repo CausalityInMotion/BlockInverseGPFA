@@ -7,95 +7,77 @@ GPFA preprocessing functions.
 """
 
 import numpy as np
-from sklearn.preprocessing import FunctionTransformer
 
 
-def transformer(X, bin_data=True, bin_size=0.02, transform_func=None):
+class EventTimesToCounts(object):
     """
-    Transforms data from an arbitrary callable, and converts binary
-    data into a numpy.ndarray of binned counts.
+    This class bins spike trains of time points and provides
+    a method to covernt `neo.SpikeTrains` data to a matrix
+    with counted time points
 
     Parameters
     ----------
-    X   : an array-like of observation sequences, one per trial.
-        Each element in X is a matrix of size #x_dim x #bins,
-        containing an observation sequence. The input dimensionality
-        #x_dim needs to be the same across elements in X, but #bins
-        can be different for each observation sequence.
-        Default : None
-    bin_data: boolean
-        Bin data into the specificied bin width (i.e., `bin_size`)
-        Default : True
-    bin_size: int
-        Data bin width in [s] e.g., 0.02, 0.05, 0.1, 1, etc.
-        Default : 0.02 [s]
-    transform_func : callable
-        The callable function to use in data transformation.
-        Default: None
+        bin_size : int
+            Data bin width in [s] e.g., 0.02, 0.05, 0.1, 1, etc.
+            Default : 0.02 [s]
+        t_stop : int
+            The stop time of the trial. If not specified, it is
+            retrieved from the `t_stop` attribute of `neo.Spiketrain`
+            or defaults to the maximum value of `X[0].shape[0]`.
+            Default : None
+        extrapolate_last_bin : boolean
+            Extrapolates the count of the last bin
+            Default : False
 
-    Returns
-    -------
-    X_out : numpy.ndarray.
-        An array-like of observation sequences, one per trial.
-        Has same data structure as `X` but may have less #x_dim
-        if any rows of the X[n] contained all zeros. If the data
-        is binned, each element in `X_out` is a matrix of size
-        #x_dim x #bins, containing an observation sequence within
-        # each trial. The input dimensionality `x_dim` needs to be
-        # the same across all elements in `X`, but #bins can differ.
+    Method
+    ------
+    transform
+
     """
-    # ====================================
-    # Remove inactive rows from the data
-    # ====================================
-    X_out = X
-    # Get the dimension of training data
-    non_zero_x_dim = np.hstack(X_out).any(axis=1)
-    for X_out_n in X_out:
-        X_out_n = X_out_n[non_zero_x_dim, :]
+    def __init__(self, bin_size=0.02, t_stop=None,
+                 extrapolate_last_bin=False):
+        self.bin_size = bin_size
+        self.t_stop = t_stop
+        self.extrapolate_last_bin = extrapolate_last_bin
 
-    # for computational convenience change bin_size to int
-    bin_size = int(bin_size * 1000)
+        # for computational convenience
+        self.bin_size = int(self.bin_size * 1000)
 
-    # loop over all trials
-    for n, X_n in enumerate(X_out):
-        # ====================
-        # Bin data
-        # ====================
-        if bin_data:
-            # number of units
-            x_dim = X_n.shape[0]
-            # number of bins per trial
-            n_bin = int(np.floor(X_n.shape[1]/bin_size))
-            binned_spikecount = np.zeros([x_dim, n_bin])
+    def transform(self, X):
+        """
+        Transforms data from event times to binned counts
 
-            # loop over the number of bins to compute the
-            # count per bin
-            for b in range(n_bin):
+        Parameter
+        ---------
+        X : numpy.array or neo.SpikeTrain
+            An array-like of observation sequences from one trial.
+            Each element in X must be of the same length.
 
-                # bin egdes
-                t_start = bin_size * b
-                t_stop = bin_size * (b + 1)
-                binned_spikecount[:, b] = np.sum(
-                                        X_n[:, t_start:t_stop],
-                                        axis=1
-                                        )
-        # ============================
-        # Transform data
-        # ============================
-        if transform_func is not None:
-            if bin_data:
-                transform = FunctionTransformer(transform_func)
-                X_transformed = transform.transform(binned_spikecount)
+        Returns
+        -------
+        X_out : numpy.array
+            An array-like of observation sequences from one trial.
+            Each element in `X_out` is a matrix of size
+            #x_dim x #bins, containing binned observation sequence.
+        """
+        X_out = np.empty(len(X), object)
+
+        for i, spiketrain in enumerate(X):
+            if hasattr(spiketrain, 't_spot'):
+                self.t_stop = int(spiketrain.t_stop.magnitude)
+                spiketrain = spiketrain.magnitude
             else:
-                transform = FunctionTransformer(transform_func)
-                X_transformed = transform.transform(X_n)
+                if self.t_stop is None:
+                    self.t_stop = spiketrain.shape[0]
+                spiketrain = np.where(spiketrain)[0]
 
-        X_out[n] = X_transformed
+            t_start = 0
+            edges = np.arange(t_start, self.t_stop, self.bin_size)
+            binned_spikecounts = np.histogram(spiketrain, edges)[0]
+            # extrapolate the last  bin
+            if self.extrapolate_last_bin:
+                scale = binned_spikecounts[-1] / (self.t_stop % self.bin_size)
+                binned_spikecounts[-1] = np.ceil(scale * self.bin_size)
+            X_out[i] = binned_spikecounts
 
-    # =================================================
-    # Remove trials that are shorter than one bin width
-    # =================================================
-    if len(X_out) > 0:
-        trials_to_keep = np.array([X_out_n.shape[1] for X_out_n in X_out]) > 0
-        X_out = np.array(X_out)[(trials_to_keep)]
-    return X_out
+        return X_out
