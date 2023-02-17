@@ -40,9 +40,6 @@ class EventTimesToCounts(object):
         self.t_stop = t_stop
         self.extrapolate_last_bin = extrapolate_last_bin
 
-        # for computational convenience
-        self.bin_size = int(self.bin_size * 1000)
-
     def transform(self, X):
         """
         Transforms data from event times to binned counts
@@ -62,9 +59,13 @@ class EventTimesToCounts(object):
         """
         X_out = np.empty(len(X), object)
 
+        # for computational convenience
+        if not hasattr(X[0], 't_stop'):
+            self.bin_size = int(self.bin_size * 1000)
+
         for i, spiketrain in enumerate(X):
-            if hasattr(spiketrain, 't_spot'):
-                self.t_stop = int(spiketrain.t_stop.magnitude)
+            if hasattr(spiketrain, 't_stop'):
+                self.t_stop = spiketrain.t_stop.magnitude
                 spiketrain = spiketrain.magnitude
             else:
                 if self.t_stop is None:
