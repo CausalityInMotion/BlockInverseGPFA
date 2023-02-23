@@ -48,7 +48,9 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
             or defaults to the maximum value of `X[i].shape[0]`.
             Default : None
         extrapolate_last_bin : boolean
-            Extrapolates the count of the last bin
+            Extrapolates the count of the last bin. If set to `True`,
+            the binned spike counts in `X_out` will be converted
+            from `integers` to floats.
             Default : False
 
     Method
@@ -90,7 +92,7 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
                 self.t_stop = X[0].t_stop.magnitude
             else:
                 self.t_stop = max(map(lambda x: x[-1], X))
-                
+
         # ====================================
         # get the bins based on the `bin_size`
         # ====================================
@@ -137,7 +139,7 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
 
             # binning happens here
             binned_spikecounts = np.histogram(spiketrain, edges)[0]
-            # extrapolate the last  bin
+            # extrapolate the last bin
             if self.extrapolate_last_bin:
                 scale = binned_spikecounts[-1] / modulus
                 binned_spikecounts[-1] = round(scale * self.bin_size)
