@@ -140,9 +140,9 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
             if hasattr(spiketrain, 'units'):
                 if self.t_stop != spiketrain.t_stop.magnitude:
                     raise ValueError(
-                        f'The specified or computed `t_stop`: {self.t_stop}'
-                        f'is different from the {i}_th spikeTrain `t_stop`'
-                        "`t_stop` must be the same across all neurons "
+                        f'The specified or computed `t_stop`: {self.t_stop} '
+                        f'is different from the {i}_th spikeTrain `t_stop` '
+                        "`t_stop` must be the same across all neurons."
                     )
                 spiketrain = spiketrain.magnitude
 
