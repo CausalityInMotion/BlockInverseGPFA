@@ -91,8 +91,13 @@ class TestProprocessing(unittest.TestCase):
         self.T_with_extrapolatelastbin_at_tstop2 = EventTimesToCounts(
                                                     bin_size=self.bin_size,
                                                     t_stop=self.t_stop2,
-                                                    extrapolate_last_bin=True
-                                                    )
+                                                    extrapolate_last_bin=True)
+
+        # initiate `EventTimesToCounts` with `extrapolate_last_bin=True`
+        # for `t_stop=None`
+        self.T_with_extrapolatelastbin_tstopNone = EventTimesToCounts(
+                                                    bin_size=self.bin_size,
+                                                    extrapolate_last_bin=True)
 
         # ======================
         # # The expected results
@@ -116,7 +121,6 @@ class TestProprocessing(unittest.TestCase):
     # ==========
     # Test cases
     # ==========
-    @unittest.skipIf(not neo_imported, "neo not imported")
     def test_transform_at_tstop1(self):
         """
         Test `EventTimesToCounts.transform` for `t_stop = 0.4`,
@@ -125,18 +129,11 @@ class TestProprocessing(unittest.TestCase):
         trans1 = self.T_at_tstop1.transform(self.X1_at_tstop1)
         trans2 = self.T_at_tstop1.transform(self.X2_at_tstop1)
         trans3 = self.T_at_tstop1.transform(self.X3_at_tstop1)
-        trans4 = self.T_at_tstop1.transform(self.X4_at_tstop1)
 
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans1))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans2))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans3))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans4))
+        self.assertEqual(self.results_at_tstop1.all(), trans1.all())
+        self.assertEqual(self.results_at_tstop1.all(), trans2.all())
+        self.assertEqual(self.results_at_tstop1.all(), trans3.all())
 
-    @unittest.skipIf(not neo_imported, "neo not imported")
     def test_transform_with_extrapolatedlastbin_tstop1(self):
         """
         Test `EventTimesToCounts.transform` for `t_stop = 0.4`,
@@ -148,19 +145,11 @@ class TestProprocessing(unittest.TestCase):
             self.X2_at_tstop1)
         trans3 = self.T_with_extrapolatelastbin_at_tstop1.transform(
             self.X3_at_tstop1)
-        trans4 = self.T_with_extrapolatelastbin_at_tstop1.transform(
-            self.X4_at_tstop1)
 
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans1))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans2))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans3))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans4))
+        self.assertEqual(self.results_at_tstop1.all(), trans1.all())
+        self.assertEqual(self.results_at_tstop1.all(), trans2.all())
+        self.assertEqual(self.results_at_tstop1.all(), trans3.all())
 
-    @unittest.skipIf(not neo_imported, "neo not imported")
     def test_transform_at_tstop2(self):
         """
         Test `EventTimesToCounts.transform` for `t_stop = 0.48`,
@@ -169,18 +158,29 @@ class TestProprocessing(unittest.TestCase):
         trans1 = self.T_at_tstop2.transform(self.X1_at_tstop2)
         trans2 = self.T_at_tstop2.transform(self.X2_at_tstop2)
         trans3 = self.T_at_tstop2.transform(self.X3_at_tstop2)
-        trans4 = self.T_at_tstop2.transform(self.X4_at_tstop2)
 
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans1))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans2))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans3))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop1, trans4))
+        self.assertEqual(self.results_at_tstop1.all(), trans1.all())
+        self.assertEqual(self.results_at_tstop1.all(), trans2.all())
+        self.assertEqual(self.results_at_tstop1.all(), trans3.all())
 
-    @unittest.skipIf(not neo_imported, "neo not imported")
+    def test_transform_x_at_tstop2_with_extrapolatedlastbin_tstop1(self):
+        """
+        Test `EventTimesToCounts.transform` for `t_stop = 0.4`,
+        `bin_size = 0.1` and `extrapolate_last_bin=True` but on
+        input data with the last spike times at 0.48 [s]. Here it
+        (last spike time) should be ignored.
+        """
+        trans1 = self.T_with_extrapolatelastbin_at_tstop1.transform(
+            self.X1_at_tstop2)
+        trans2 = self.T_with_extrapolatelastbin_at_tstop1.transform(
+            self.X2_at_tstop2)
+        trans3 = self.T_with_extrapolatelastbin_at_tstop1.transform(
+            self.X3_at_tstop2)
+
+        self.assertEqual(self.results_at_tstop1.all(), trans1.all())
+        self.assertEqual(self.results_at_tstop1.all(), trans2.all())
+        self.assertEqual(self.results_at_tstop1.all(), trans3.all())
+
     def test_transform_with_extrapolatedlastbin_tstop2(self):
         """
         Test `EventTimesToCounts.transform` for `t_stop = 0.48`,
@@ -193,14 +193,53 @@ class TestProprocessing(unittest.TestCase):
             self.X2_at_tstop2)
         trans3 = self.T_with_extrapolatelastbin_at_tstop2.transform(
             self.X3_at_tstop2)
+
+        self.assertTrue(np.allclose(self.results_at_tstop2, trans1))
+        self.assertTrue(np.allclose(self.results_at_tstop2, trans2))
+        self.assertTrue(np.allclose(self.results_at_tstop2, trans3))
+
+    @unittest.skipIf(not neo_imported, "neo not imported")
+    def test_transform_on_neospiketrains(self):
+        """
+        Test `EventTimesToCounts.transform` for difference
+        test conditions.
+        """
+        # ============================
+        # `extrapolate_last_bin=False`
+        # ============================
+        # 1. When `t_stop=0.4` and the last spike time is at 0.4 [s]
+        trans1 = self.T_at_tstop1.transform(self.X4_at_tstop1)
+        self.assertEqual(self.results_at_tstop1.all(), trans1.all())
+
+        # 2. When `t_stop=0.48` and the last spike time is at 0.48 [s]
+        trans2 = self.T_at_tstop2.transform(self.X4_at_tstop2)
+        self.assertEqual(self.results_at_tstop1.all(), trans2.all())
+
+        # ===========================
+        # `extrapolate_last_bin=True`
+        # ===========================
+        # 3. When `t_stop=0.4` and the last spike time is at 0.4 [s]
+        trans3 = self.T_with_extrapolatelastbin_at_tstop1.transform(
+            self.X4_at_tstop1)
+        self.assertEqual(self.results_at_tstop1.all(), trans3.all())
+
+        # 4. When `t_stop=0.48` and the last spike time is at 0.48 [s]
         trans4 = self.T_with_extrapolatelastbin_at_tstop2.transform(
             self.X4_at_tstop2)
+        self.assertTrue(np.allclose(self.results_at_tstop2, trans4))
 
-        self.assertTrue(np.allclose(
-            self.results_at_tstop2, trans1))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop2, trans2))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop2, trans3))
-        self.assertTrue(np.allclose(
-            self.results_at_tstop2, trans4))
+        # 5. When `t_stop=0.4` but the last spike time is at 0.48 [s],
+        #    which means the spike time at 0.48 [s] should be ignored.
+        #    However, `EventTimesToCounts.transform` should throw an
+        #    exception since the `t_stop` initialized in
+        #    `T_with_extrapolatelastbin_at_tstop1` is different from
+        #    `t_stop` in `X4_at_tstop2.t_stop.magnitude`. Let's test
+        #    if indeeded this the case.
+        self.assertRaises(ValueError,
+                          self.T_with_extrapolatelastbin_at_tstop1.transform,
+                          self.X4_at_tstop2)
+
+        # 6. Now try `t_stop=None` and the last spike time is at 0.4 [s]
+        trans6 = self.T_with_extrapolatelastbin_tstopNone.transform(
+            self.X4_at_tstop2)
+        self.assertEqual(self.results_at_tstop1.all(), trans6.all())
