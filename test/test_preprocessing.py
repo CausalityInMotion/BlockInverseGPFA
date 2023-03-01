@@ -43,10 +43,11 @@ class TestProprocessing(unittest.TestCase):
         self.X2_at_tstop1 = [np.array(self.X1_at_tstop1[0]),
                              np.array(self.X1_at_tstop1[1])]
         self.X3_at_tstop1 = np.array(self.X2_at_tstop1, object)
-        self.X4_at_tstop1 = [neo.SpikeTrain(self.X1_at_tstop1[0],
-                             units='sec', t_stop=self.t_stop1),
-                             neo.SpikeTrain(self.X1_at_tstop1[1],
-                             units='sec', t_stop=self.t_stop1)]
+        if neo_imported:
+            self.X4_at_tstop1 = [neo.SpikeTrain(self.X1_at_tstop1[0],
+                                 units='sec', t_stop=self.t_stop1),
+                                 neo.SpikeTrain(self.X1_at_tstop1[1],
+                                 units='sec', t_stop=self.t_stop1)]
 
         # =======================================
         #  Sample data where `t_stop2 = 0.48 [s]`
@@ -59,10 +60,12 @@ class TestProprocessing(unittest.TestCase):
         self.X2_at_tstop2 = [np.array(self.X1_at_tstop2[0]),
                              np.array(self.X1_at_tstop2[1])]
         self.X3_at_tstop2 = np.array(self.X2_at_tstop2, object)
-        self.X4_at_tstop2 = [neo.SpikeTrain(self.X1_at_tstop2[0],
-                             units='sec', t_stop=self.t_stop2),
-                             neo.SpikeTrain(self.X1_at_tstop2[1],
-                             units='sec', t_stop=self.t_stop2)]
+
+        if neo_imported:
+            self.X4_at_tstop2 = [neo.SpikeTrain(self.X1_at_tstop2[0],
+                                 units='sec', t_stop=self.t_stop2),
+                                 neo.SpikeTrain(self.X1_at_tstop2[1],
+                                 units='sec', t_stop=self.t_stop2)]
 
         # ===============================
         # # initiate `EventTimesToCounts`
