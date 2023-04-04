@@ -1,7 +1,6 @@
 """
 GPFA Unittests.
 :copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
-:copyright: Copyright 2014-2020 by the Elephant team.
 :license: Modified BSD, see LICENSE.txt for details.
 """
 
@@ -277,3 +276,13 @@ class TestGPFA(unittest.TestCase):
         test_pZ_mu_orth = np.dot(self.gpfa.OrthTrans_, pZ_mu)
         # Assert
         self.assertTrue(np.allclose(pZ_mu_orth, test_pZ_mu_orth))
+
+    def test_explained_variance(self):
+        """
+        Test GPFA explained_variance
+        """
+        trial1_r2_score = 0.389
+        r2_t1 = self.gpfa.explained_variance()['scores']['trial_r2_score'][0]
+        
+        # Assert
+        self.assertEqual(trial1_r2_score, r2_t1)
