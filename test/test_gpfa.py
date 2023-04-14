@@ -281,8 +281,8 @@ class TestGPFA(unittest.TestCase):
         """
         Test GPFA explained_variance
         """
-        trial1_r2_score = 0.389
-        r2_t1 = self.gpfa.explained_variance()['scores']['trial_r2_score'][0]
+        test_r2_score = 0.197
+        r2_t1 = self.gpfa.variance_explained()['r2_score']
         
         # Assert
-        self.assertEqual(trial1_r2_score, r2_t1)
+        self.assertEqual(test_r2_score, r2_t1)
