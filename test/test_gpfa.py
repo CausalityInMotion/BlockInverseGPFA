@@ -277,7 +277,7 @@ class TestGPFA(unittest.TestCase):
         # Assert
         self.assertTrue(np.allclose(pZ_mu_orth, test_pZ_mu_orth))
 
-    def test_explained_variance(self):
+    def test_variance_explaied(self):
         """
         Test GPFA explained_variance
         """
