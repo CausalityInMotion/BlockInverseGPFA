@@ -471,9 +471,10 @@ class GPFA(sklearn.base.BaseEstimator):
             return seqs[returned_data[0]], lls
         return {i: seqs[i] for i in returned_data}, lls
 
-    def score(self, X):
+    def score(self, X=None):
         """
-        Returns the log-likelihood of the given data under the fitted model
+        Returns the log-likelihood scores. If `X = None`, the training 
+        date log-likelihood scores will be returned.
         Parameters
         ----------
         X   : an array-like of observation sequences, one per trial.
@@ -481,13 +482,16 @@ class GPFA(sklearn.base.BaseEstimator):
             containing an observation sequence. The input dimensionality
             #x_dim needs to be the same across elements in X, but #bins
             can be different for each observation sequence.
+            Default = None
         Returns
         -------
-        log_likelihood : float
-            Log-likelihood of the given X under the fitted model.
+        log_likelihood : list
+            List of log-likelihood
         """
-        _, ll = self.predict(X, returned_data=['pZ_mu'])
-        return ll
+        if X is None:
+            return self.fit_info_['log_likelihoods']
+        _, lls = self._infer_latents(X, get_ll=True)
+        return lls
 
     def variance_explained(self):
         """
@@ -498,33 +502,30 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Returns
         -------
-        Dictionary
-            Fileds:
-            r2_score : numpy.ndarray
-                The total :math:`R^2` score i.e., the total explained
-                variance
-            latent_r2_scores : list
-                The total explained variance by each latent
+        R2 : float
+                The total :math:`R^2` score i.e., the total variance
+                explained
+        latent_R2s : numpy.array
+                The variance explained by each latent
         """
         seqs, _ = self.predict(returned_data=['X', 'pZ_mu_orth'])
         X, pZ_mu_orth = seqs['X'], seqs['pZ_mu_orth']
 
         Corth = self.Corth_
+        x_mean = self.d_[:, np.newaxis]
 
-        numerator = 0
-        denominator = 0
+        SStot = 0.0
+        SSreg = np.zeros(Corth.shape[1])
+        Corth2 = np.sum(Corth ** 2, axis=0)
         for i, x in enumerate(X):
-            xc = x - self.d_[:, np.newaxis]  # x centered
-            xc_dstacked = np.dstack([xc] * Corth.shape[1])
-            cz = np.einsum('ac,cd->adc', Corth, pZ_mu_orth[i])
+            xc = x - x_mean
+            SStot += np.sum(xc ** 2)
+            SSreg += 2 * np.sum(pZ_mu_orth[i] * (Corth.T @ xc), axis=1) \
+                  - Corth2 * np.sum(pZ_mu_orth[i] ** 2, axis=1)
 
-            numerator += np.average((xc_dstacked - cz) ** 2, axis=(0, 1))
-            denominator += np.average(xc ** 2)
-
-        latent_r2_scores = np.round(1 - numerator / denominator, 3)
-        r2_score = np.sum(latent_r2_scores)
-
-        return {"r2_score": r2_score, "latent_r2_scores": latent_r2_scores}
+        latent_R2s = np.round(SSreg / SStot, 3)
+        R2 = np.sum(latent_R2s)
+        return R2, latent_R2s
 
     def _em(self, X):
         """
