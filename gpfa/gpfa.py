@@ -471,10 +471,10 @@ class GPFA(sklearn.base.BaseEstimator):
             return seqs[returned_data[0]], lls
         return {i: seqs[i] for i in returned_data}, lls
 
-    def score(self, X):
+    def score(self, X=None):
         """
-        Returns the log-likelihood of the given data under the fitted model
-
+        Returns the log-likelihood scores. If `X = None`, the training
+        data log-likelihood scores will be returned.
         Parameters
         ----------
         X   : an array-like of observation sequences, one per trial.
@@ -482,14 +482,50 @@ class GPFA(sklearn.base.BaseEstimator):
             containing an observation sequence. The input dimensionality
             #x_dim needs to be the same across elements in X, but #bins
             can be different for each observation sequence.
+            Default = None
+        Returns
+        -------
+        log_likelihood : list
+            List of log-likelihoods
+        """
+        if X is None:
+            return self.fit_info_['log_likelihoods']
+        _, lls = self._infer_latents(X, get_ll=True)
+        return lls
+
+    def variance_explained(self):
+        """
+        Computes the total explained vairaince regression score using
+        :math:`R^2` (coefficient of determination) for overall `X`.
+        The total explained variance is decomposed into individual
+        contributions by each orthonormalized latent variable.
 
         Returns
         -------
-        log_likelihood : float
-            Log-likelihood of the given X under the fitted model.
+        R2 : float
+                The total :math:`R^2` score i.e., the total variance
+                explained
+        latent_R2s : numpy.array
+                The variance explained by each latent
         """
-        _, ll = self.predict(X, returned_data=['pZ_mu'])
-        return ll
+        seqs, _ = self.predict(returned_data=['X', 'pZ_mu_orth'])
+        X, pZ_mu_orth = seqs['X'], seqs['pZ_mu_orth']
+
+        Corth = self.Corth_
+        x_mean = self.d_[:, np.newaxis]
+
+        SStot = 0.0
+        SSreg = np.zeros(Corth.shape[1])
+        Corth2 = np.sum(Corth ** 2, axis=0)
+        for i, x in enumerate(X):
+            xc = x - x_mean
+            SStot += np.sum(xc ** 2)
+            SSreg += 2 * np.sum(pZ_mu_orth[i] * (Corth.T @ xc), axis=1) \
+                - Corth2 * np.sum(pZ_mu_orth[i] ** 2, axis=1)
+
+        latent_R2s = SSreg / SStot
+        R2 = np.sum(latent_R2s)
+        return R2, latent_R2s
 
     def _em(self, X):
         """
@@ -531,9 +567,9 @@ class GPFA(sklearn.base.BaseEstimator):
 
         # ============== Make Precomp_init ==============
         # assign some helpful precomp items
-        precomp = {'Tsdt': Tsdt[:,np.newaxis], 'Tu': np.empty(len(unique_Ts),
-                dtype=[('nList', object), ('T', int), ('numTrials', int),
-                ('PautoSUM', object)])}
+        precomp = {'Tsdt': Tsdt[:, np.newaxis], 'Tu': np.empty(len(unique_Ts),
+                   dtype=[('nList', object), ('T', int), ('numTrials', int),
+                   ('PautoSUM', object)])}
 
         # Loop once for each unique trial length
         for j, trial_len_num in enumerate(unique_Ts):
@@ -577,7 +613,7 @@ class GPFA(sklearn.base.BaseEstimator):
             # term is (z_dim+1) x (z_dim+1)
             term = np.vstack(
                     [np.hstack([sum_p_auto, sum_Zall]),
-                    np.hstack([sum_Zall.T, Tall.sum().reshape((1, 1))])]
+                     np.hstack([sum_Zall.T, Tall.sum().reshape((1, 1))])]
                     )
             # x_dim x (z_dim+1)
             cd = np.linalg.solve(
@@ -654,8 +690,8 @@ class GPFA(sklearn.base.BaseEstimator):
         -------
         latent_seqs : numpy.recarray
             X_out : numpy.ndarray
-                input data structure, whose n-th element (corresponding to the n-th
-                experimental trial) has fields:
+                input data structure, whose n-th element (corresponding to the
+                n-th experimental trial) has fields:
                 X : numpy.ndarray of shape (#x_dim, #bins)
             pZ_mu : (#z_dim, #bins) numpy.ndarray
                 posterior mean of latent variables at each time bin
@@ -880,7 +916,7 @@ class GPFA(sklearn.base.BaseEstimator):
             # Skip trials that are shorter than segLength
             if T < seg_length:
                 warnings.warn(
-                    f'trial corresponding to index {n} \
+                    f'trial corresponding to index {n} is \
                         shorter than one segLength...'
                     'skipping')
                 continue

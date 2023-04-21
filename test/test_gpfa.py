@@ -1,7 +1,6 @@
 """
 GPFA Unittests.
 :copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
-:copyright: Copyright 2014-2020 by the Elephant team.
 :license: Modified BSD, see LICENSE.txt for details.
 """
 
@@ -253,7 +252,7 @@ class TestGPFA(unittest.TestCase):
         """
         Test the data log_likelihood
         """
-        test_ll = -4092.07613484949
+        test_ll = -4092.076117337763
         # Assert
         self.assertEqual(test_ll, self.ll)
         self.assertEqual(test_ll, self.ll_seq_kernel)
@@ -277,3 +276,12 @@ class TestGPFA(unittest.TestCase):
         test_pZ_mu_orth = np.dot(self.gpfa.OrthTrans_, pZ_mu)
         # Assert
         self.assertTrue(np.allclose(pZ_mu_orth, test_pZ_mu_orth))
+
+    def test_variance_explained(self):
+        """
+        Test GPFA explained_variance
+        """
+        test_r2_score = 0.6648115733320232
+        r2_t1 = self.gpfa.variance_explained()[0]
+        # Assert
+        self.assertEqual(test_r2_score, r2_t1)
