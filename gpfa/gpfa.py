@@ -473,8 +473,8 @@ class GPFA(sklearn.base.BaseEstimator):
 
     def score(self, X=None):
         """
-        Returns the log-likelihood scores. If `X = None`, the training 
-        date log-likelihood scores will be returned.
+        Returns the log-likelihood scores. If `X = None`, the training
+        data log-likelihood scores will be returned.
         Parameters
         ----------
         X   : an array-like of observation sequences, one per trial.
@@ -486,7 +486,7 @@ class GPFA(sklearn.base.BaseEstimator):
         Returns
         -------
         log_likelihood : list
-            List of log-likelihood
+            List of log-likelihoods
         """
         if X is None:
             return self.fit_info_['log_likelihoods']
@@ -521,9 +521,9 @@ class GPFA(sklearn.base.BaseEstimator):
             xc = x - x_mean
             SStot += np.sum(xc ** 2)
             SSreg += 2 * np.sum(pZ_mu_orth[i] * (Corth.T @ xc), axis=1) \
-                  - Corth2 * np.sum(pZ_mu_orth[i] ** 2, axis=1)
+                - Corth2 * np.sum(pZ_mu_orth[i] ** 2, axis=1)
 
-        latent_R2s = np.round(SSreg / SStot, 3)
+        latent_R2s = SSreg / SStot
         R2 = np.sum(latent_R2s)
         return R2, latent_R2s
 
