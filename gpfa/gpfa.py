@@ -1,9 +1,10 @@
 """
-Gaussian-process factor analysis (GPFA) is a dimensionality reduction method
-:cite:`gpfa-Yu2008_1881` for latent trajectory visualization. GPFA applies f
-actor analysis (FA) to observed data to reduce the dimensionality and at the
-same time smoothes the resulting low-dimensional trajectories by fitting a
-Gaussian process (GP) model to them.
+Gaussian-process factor analysis (GPFA) is a dimensionality reduction
+method :cite:`gpfa-Yu2008_1881` that extracts smooth, low-dimensional
+latent trajactories from noisy, high-dimensional time series data. GPFA
+applies factor analysis (FA) to observed data to reduce the dimensionality
+and at the same time smoothes the resulting low-dimensional trajectories
+by fitting a Gaussian process (GP) model to them.
 
 The input consists of a set of trials (X), each containing a list of
 observation sequences, one per trial. The output is the projection (Z) of the
@@ -11,22 +12,25 @@ data in a space of pre-chosen dimensionality z_dim < N.
 
 Under the assumption of a linear relation (transform matrix C) between the
 latent variable Z following a Gaussian process and the observation X with
-a bias d and  a noise term of zero mean and (co)variance R (i.e.,
+a bias d and a noise term of zero mean and (co)variance R (i.e.,
 :math:`X = C@Z + d + Gauss(0,R)`), the projection corresponds to the
-conditional probability E[Z|X].
-The parameters (C, d, R) as well as the time scales and variances of the
-Gaussian process are estimated from the data using an expectation-maximization
-(EM) algorithm.
+conditional probability E[Z|X]. The parameters (C, d, R) as well as the
+time scales and variances of the Gaussian process are estimated from the
+data using an expectation-maximization (EM) algorithm.
 
-1) expectation-maximization for fitting of the parameters C, d, R and the
-time-scales and variances of the Gaussian process, using all the trials
-provided as input
+Internally, the analysis consists of the following steps:
 
-2) projection of single trials in the low dimensional space and perform
-orthonormalization of the matrix C
+1) expectation-maximization for fitting of the parameters C, d, R, theta
+(the log(kernel parameters) i.e., time-scales) and variances of the Gaussian
+process, using all trials provided as input (c.f., `_em()`)
 
-3) prediction and orthonormalization of the corresponding subspace,
-for visualization purposes
+2) perform orthonormalization of the matrix (c.f., `_fit()`)
+
+3) projection of single trials in the low dimensional space
+(c.f., `_infer_latents()`)
+
+4) prediction and orthonormalization of the corresponding subspace,
+for visualization purposes (c.f., `predict()`)
 
 Original code
 -------------
