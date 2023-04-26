@@ -8,7 +8,7 @@ by fitting a Gaussian process (GP) model to them.
 
 The input consists of a set of trials (X), each containing a list of
 observation sequences, one per trial. The output is the projection (Z) of the
-data in a space of pre-chosen dimensionality z_dim < N.
+data in a space of pre-chosen dimensionality z_dim < x_dim.
 
 Under the assumption of a linear relation (transform matrix C) between the
 latent variable Z following a Gaussian process and the observation X with
@@ -24,9 +24,9 @@ Internally, the analysis consists of the following steps:
 (the log(kernel parameters) i.e., time-scales) and variances of the Gaussian
 process, using all trials provided as input (c.f., `_em()`)
 
-2) perform orthonormalization of the matrix (c.f., `_fit()`)
+2) perform orthonormalization of the matrix C (c.f., `fit()`)
 
-3) projection of single trials in the low dimensional space
+3) projection of single trials into the latent space
 (c.f., `_infer_latents()`)
 
 4) prediction and orthonormalization of the corresponding subspace,
@@ -80,52 +80,59 @@ class GPFA(sklearn.base.BaseEstimator):
 
     In the second scenario, a single dataset is split into training and test
     datasets. Here, the parameters are estimated from the training data. Then
-    the test data is projected into the low-dimensional space previously
-    obtained from the training data. This analysis is performed by executing
-    first the `fit()` method on the training data, followed by the
-    `predict()` method on the test dataset.
+    the test data is projected into the latent space previously obtained from
+    the training data. This analysis is performed by executing first the
+    `fit()` method on the training data, followed by the `predict()` method
+    on the test dataset.
 
     The GPFA class is compatible to the cross-validation functions of
     `sklearn.model_selection`, such that users can perform cross-validation to
     search for a set of parameters yielding best performance using these
-    functions.
+    functions. Furthermore, it is compatible with more generic kernel functions
+    of the `sklearn.gaussian_process.kernels`. Users can define or compose a
+    set of kernels which can be passed as a parameter when initializing the
+    GPFA class.
 
     Parameters
     ----------
-    z_dim : int, optional
+    z_dim : int, optional, default=3
         latent state dimensionality
-        Default: 3
-    bin_size : float, optional
+
+    bin_size : float, optional, default=0.02
         observed data bin width in sec
-        Default: 0.02
+
     gp_kernel : kernel instance, default=None
         If None is passed, the kernel defaults to
-        ConstantKernel(1-0.001, constant_value_bounds='fixed')
+        `ConstantKernel(1-0.001, constant_value_bounds='fixed')
         * RBF(length_scale=0.1)
         + ConstantKernel(0.001, constant_value_bounds='fixed')
-        * WhiteKernel(noise_level=1, noise_level_bounds='fixed')
-        where only kernel hyperparameters not marked as 'fixed'
+        * WhiteKernel(noise_level=1, noise_level_bounds='fixed')`
+        where only kernel hyperparameters not marked as `fixed`
         are learned - in this case only the `length scale`
         of the RBF kernel.
-        Note that the `gp_kernel` can either be a single kernel
-        (in which case it will be replicated across all latent dimensions),
-        or a sequence of kernels, one per latent dimension
-    min_var_frac : float, optional
+
+        .. note::
+            The `gp_kernel` can either be a single kernel (in which case it
+            will be replicated across all latent dimensions) or a sequence
+            of kernels, one per latent dimension
+
+    min_var_frac : float, optional, default=0.01
         fraction of overall data variance for each observed dimension to set as
         the private variance floor.  This is used to combat Heywood cases,
         where ML parameter learning returns one or more zero private variances.
-        Default: 0.01
         (See Martin & McDonald, Psychometrika, Dec 1975.)
-    em_tol : float, optional
+
+    em_tol : float, optional, default=1e-8
         stopping criterion for EM
-        Default: 1e-8
-    em_max_iters : int, optional
+
+    em_max_iters : int, optional, default=500
         number of EM iterations to run
-        Default: 500
-    freq_ll : int, optional
-        data likelihood is computed at every freq_ll EM iterations. freq_ll = 1
-        means that data likelihood is computed at every iteration.
-        Default: 5
+
+    freq_ll : int, optional, default=5
+        data likelihood is computed at every freq_ll EM iterations.
+        freq_ll = 1 means that data likelihood is computed at every
+        iteration.
+
     verbose : bool, optional
         specifies whether to display status messages
         Default: False
@@ -135,6 +142,7 @@ class GPFA(sklearn.base.BaseEstimator):
     valid_data_names_ : tuple of str
         Names of the data contained in the resultant data structure, used to
         check the validity of users' request
+
     Estimated model parameters. Updated when calling `fit()` method.
         self.gp_kernel.theta : numpy.array
             the flattened and log-transformed non-fixed hyperparams
@@ -147,6 +155,7 @@ class GPFA(sklearn.base.BaseEstimator):
             space and the latent variable space
         R_ : (#x_dim, #x_dim) numpy.ndarray
             observation noise covariance
+
     fit_info_ : dict
         Information of the fitting process. Updated at each run of the fit()
         method.
@@ -154,6 +163,7 @@ class GPFA(sklearn.base.BaseEstimator):
             containing the runtime for each iteration step in the EM algorithm.
         log_likelihoods : list
             log likelihoods after each EM iteration.
+
     train_latent_seqs_ : numpy.recarray
         a copy of the training data structure, augmented with the new
         fields:
