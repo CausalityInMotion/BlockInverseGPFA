@@ -14,7 +14,7 @@ Under the assumption of a linear relation (transform matrix C) between the
 latent variable Z following a Gaussian process and the observation X with
 a bias d and a noise term of zero mean and (co)variance R (i.e.,
 :math:`X = C@Z + d + Gauss(0,R)`), the projection corresponds to the
-conditional probability E[Z|X]. The parameters (C, d, R) as well as the
+conditional probability :math:[Z|X]. The parameters (C, d, R) as well as the
 time scales and variances of the Gaussian process are estimated from the
 data using an expectation-maximization (EM) algorithm.
 
@@ -144,7 +144,7 @@ class GPFA(sklearn.base.BaseEstimator):
         check the validity of users' request
 
     Estimated model parameters. Updated when calling `fit()` method.
-        self.gp_kernel.theta : numpy.array
+        gp_kernel.theta : numpy.array
             the flattened and log-transformed non-fixed hyperparams
             to which optimization is performed,
             where :math:`theta = log(kernel parameters)`
@@ -181,39 +181,43 @@ class GPFA(sklearn.base.BaseEstimator):
     fit
     predict
     score
+    variance_explained
 
-    Example
+    Examples
     --------
     The following example computes the trajectories sampled from a random
     multivariate Gaussian process.
 
     >>> import numpy as np
     >>> from gpfa import GPFA
+    >>> from sklearn.gaussian_process.kernels import RBF, WhiteKernel
+    >>> from sklearn.gaussian_process.kernels import ConstantKernel
 
     >>> # set random parameters
     >>> seed = [0, 8, 10]
-    >>> bin_size = 0.02                             # [s]
-    >>> sigma_f = 1.0
-    >>> sigma_n = 1e-8
-    >>> tau_f = 0.7
-    >>> num_trials = 3                              # number of trials
-    >>> N = 10                                      # number of units
-    >>> z_dim = 3                                   # number of latent state
+    >>> z_dim = 3
+    >>> units = 10
+    >>> tau_f = 0.1
+    >>> sigma_n = 0.001
+    >>> sigma_f = 1 - sigma_n
+    >>> bin_size = 0.02  # [s]
+    >>> num_trials = 3
+    >>> n_timesteps = 500
 
-    >>> # get some finte number of points
-    >>> t = np.arange(0, 10, 0.01).reshape(-1,1)  # time series
-    >>> timesteps = len(t)                        # number of time points
+    >>> kernel = ConstantKernel(
+    ...                    sigma_f, constant_value_bounds='fixed'
+    ...                    ) * RBF(length_scale=tau_f) + ConstantKernel(
+    ...                    sigma_n, constant_value_bounds='fixed'
+    ...                    ) * WhiteKernel(
+    ...                        noise_level=1, noise_level_bounds='fixed'
+    ...                    )
 
-    >>> C = np.random.uniform(0, 2, (N, z_dim))     # loading matrix
-    >>> obs_noise = np.random.uniform(0.2, 0.75, N) # rand noise parameters
+    >>> tsdt = np.arange(0, n_timesteps) * bin_size
+    >>> mu = np.zeros(tsdt.shape)
+    >>> cov = kernel(tsdt[:, np.newaxis])
 
-    >>> # mean
-    >>> mu = np.zeros(t.shape)
-    >>> # Create covariance matrix for GP using the squared
-    >>> # exponential kernel from Yu et al.
-    >>> sqdist = (t - t.T)**2
-    >>> cov = sigma_f**2 * np.exp(-0.5 / tau_f**2 * sqdist)
-    ...                         + sigma_n**2 * np.eye(timesteps)
+    >>> C = np.random.uniform(0, 2, (units, z_dim))     # loading matrix
+    >>> obs_noise = np.random.uniform(0.2, 0.75, units) # rand noise parameters
 
     >>> X = []
     >>> for n in range(num_trials):
@@ -224,16 +228,62 @@ class GPFA(sklearn.base.BaseEstimator):
     >>>     Z = np.random.multivariate_normal(mu.ravel(), cov, z_dim)
 
     >>>     # observations have Gaussian noise
-    >>>     x = C@Z + np.random.normal(0, obs_noise, (timesteps, N)).T
+    >>>     x = C @ Z + np.random.normal(0, obs_noise, (n_timesteps, units)).T
     >>>     X.append(x)
 
-    >>> gpfa = GPFA(bin_size=bin_size, z_dim=2)
+    >>> gpfa = GPFA(bin_size=bin_size, z_dim=z_dim)
     >>> gpfa.fit(X)
-    >>> results = gpfa.predict(X,
-    ...                        returned_data=['pZ_mu_orth', 'pZ_mu'])
+    Initializing parameters using factor analysis...
+
+    Fitting GPFA model...
+
+    >>> results, _ = gpfa.predict(returned_data=['pZ_mu', 'pZ_mu_orth'])
     >>> pZ_mu_orth = results['pZ_mu_orth']
     >>> pZ_mu = results['pZ_mu']
 
+    >>> gpfa.variance_explained()
+    (0.93590..., array([0.76541..., 0.10446..., 0.066033...]))
+
+    >>> # GPFA on synthetic spike data
+    >>> import numpy as np
+    >>> from gpfa import GPFA
+    >>> from gpfa.preprocessing import EventTimesToCounts
+    >>> from sklearn.preprocessing import FunctionTransformer
+
+    >>> seed = [0, 8, 10, 42, 60]
+    >>> rate = 50
+    >>> units = 10
+    >>> durations = [500, 550, 600, 650, 700]  # [ms]
+    >>> num_trials = len(durations)
+
+    >>> X = np.zeros(num_trials, object)
+    >>> for i in range(num_trials):
+    >>>     np.random.seed(seed[i])
+    >>>     Data[i] = np.random.poisson(rate, (units, durations[i]))
+
+    >>> event_times_to_counts = EventTimesToCounts(extrapolate_last_bin=True)
+    >>> binned_spiketrians = [
+    ...    event_times_to_counts.transform(x_i) for x_i in X
+    ...    ]
+    >>> fun_trans = FunctionTransformer(np.sqrt)
+    >>> sqrt_spike_trains = [
+    ...    fun_trans.transform(x_i) for x_i in binned_spiketrians
+    ...    ]
+
+    >>> z_dim = 3
+    >>> bin_size = 0.02  # [s]
+    >>> gpfa = GPFA(bin_size=bin_size, z_dim=z_dim, em_max_iters=2)
+    >>> gpfa.fit(X)
+    Initializing parameters using factor analysis...
+
+    Fitting GPFA model...
+
+    >>> results, _ = gpfa.predict(returned_data=['pZ_mu','pZ_mu_orth'])
+    >>> pZ_mu_orth = results['pZ_mu_orth']
+    >>> pZ_mu = results['pZ_mu']
+
+    >>> gpfa.variance_explained()
+    (0.98518..., array([9.85162126e-01, 1.32456401e-05, 7.66699002e-06]))
     """
 
     def __init__(self, bin_size=0.02, gp_kernel=None, z_dim=3,
