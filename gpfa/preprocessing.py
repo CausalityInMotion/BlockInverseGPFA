@@ -7,13 +7,18 @@
 GPFA preprocessing class for neural data.
 
 .. autosummary::
-    :toctree: _toctree/gpfa
+    :toctree: _toctree/preprocessing
 
     EventTimesToCounts
 """
+from __future__ import division, print_function, unicode_literals
 
 import sklearn
 import numpy as np
+
+__all__ = [
+    "EventTimesToCounts"
+]
 
 
 class EventTimesToCounts(sklearn.base.TransformerMixin):
@@ -38,7 +43,7 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
 
     t_stop : float, optional, default : None
         The stop time of the trial. If not specified, it is
-        retrieved from the ``t_stop`` attribute of ``neo.Spiketrain``
+        retrieved from the `t_stop` attribute of ``neo.Spiketrain``
         or defaults to the largest spike time across all neurons.
 
     extrapolate_last_bin : boolean, optional, default : False
@@ -55,9 +60,10 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
         be ``non-integer`` values.
 
 
-    Method
-    ------
-    transform
+    Methods
+    -------
+    transform:
+        Transforms data from event times to binned counts
 
     Examples
     --------
@@ -149,11 +155,11 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
         """
         Transforms data from event times to binned counts
 
-        Parameter
-        ---------
+        Parameters
+        ----------
         X : numpy.array or neo.SpikeTrain
             An array-like of observation sequences from one trial.
-            Each element in ``X`` can be of different lengths but the
+            Each element in `X` can be of different lengths but the
             trial duration (i.e., ``t_stop``) is the same across all
             neuron.
 
