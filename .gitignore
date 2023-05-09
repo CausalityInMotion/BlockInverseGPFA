@@ -72,6 +72,7 @@ instance/
 docs/_build/
 docs/.DS_Store
 docs/_toctree/.DS_Store
+docs/_templates/.DS_Store
 
 # PyBuilder
 target/
