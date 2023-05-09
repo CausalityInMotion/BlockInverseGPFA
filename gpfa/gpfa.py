@@ -124,7 +124,7 @@ class GPFA(sklearn.base.BaseEstimator):
         observed data bin width in sec
 
     gp_kernel : kernel instance, default=None
-        If None is passed, the kernel defaults to::
+        If ``None`` is passed, the kernel defaults to::
 
             ConstantKernel(1-0.001, constant_value_bounds='fixed')
             * RBF(length_scale=0.1)
