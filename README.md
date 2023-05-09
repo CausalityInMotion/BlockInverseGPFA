@@ -1,32 +1,62 @@
 # GPFA_for_sklearn
 
-This package is an implementation of the GPFA by Byron Yu et al. in python. \
-Plus additional functional implementations 
+This package is an implementation of Gaussian Process Factor Analysis (GPFA) by Byron Yu et al.,
+(2009) in python. The code is based on [Elephant](https://elephant.readthedocs.io/en/latest/reference/gpfa.html)'s
+python implementation plus additional modules and functional implementations.
 
 ## Usage
 
-### Importing modules across subdirectories
+### Installation
+-----------------
 
-To facilite importing modules across subdirectories, use the follow code. \
-This is especially useful when runing the `../tutorial/gpfa.ipynb` file.
-```
-import pathlib
-import sys
-filepath = pathlib.Path.cwd()  # create path
+- Clone the project locally using 
 
-# add path to python path
-sys.path.insert(0, str(filepath.parent))
-```
-e.g., 
-```
-from gpfa import GPFA
+```bash
+$ git clone https://github.com/CausalityInMotion/GPFA_for_sklearn
 ```
 
+Ensure you are in the working directory of the project.
+
+Then install the project's required packages uisng
+
+```bash
+$ pip install -r requirements.txt
+```
+
+You are now set to use the package.
+
+------------------------------
+### Building the documentation
+------------------------------
+
+Building the documentation requires the following packages:
+
+ - [Sphinx](http://www.sphinx-doc.org)
+ - [Read the Docs Sphinx Theme](https://sphinx-rtd-theme.readthedocs.io/en/stable/)
+
+Install the required packages using pip:
+
+```bash
+$ pip install sphinx
+$ pip install sphinx-rtd-theme
+```
+
+Finally, to view the documentation.
+
+```bash
+$ cd docs
+$ make html
+$ open _build/html/index.html
+```
+-----------
 ### Tests
+-----------
 
-To run the unittests in the `test` folder, use the following command in your command line/terminal:
-```
+To run the unittests in the [test](test) folder, use the following command in your command line/terminal:
+
+```bash
 $ python -m unittest test.test_gpfa
+$ python -m unittest test.test_preprocessing
 ```
 
 ## License
@@ -36,3 +66,7 @@ Modified BSD License based on Elephant, see [LICENSE.txt](LICENSE.txt) for detai
 ## Copyright
 
 :copyright: 2021 Brooks M. Musangu and Jan Drugowitsch
+
+## Acknowledgments
+
+See [acknowledgments](docs/acknowledgments.rst).
