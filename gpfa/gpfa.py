@@ -5,66 +5,6 @@
 # Modified BSD, see LICENSE.txt for details.
 # ...
 
-"""
-Gaussian-process factor analysis (GPFA) is a dimensionality reduction
-method [Yu2009_614]_ that extracts smooth, low-dimensional
-latent trajactories from noisy, high-dimensional time series data. GPFA
-applies `factor analysis (FA) <https://scikit-learn.org/stable/modules/
-generated/sklearn.decomposition.FactorAnalysis.html>`_ to observed data
-to reduce the dimensionality and at the same time smoothes the resulting
-low-dimensional trajectories by fitting a `Gaussian process (GP)
-<https://scikit-learn.org/stable/modules/generated/
-sklearn.gaussian_process.kernels.Kernel.
-html#sklearn.gaussian_process.kernels.Kernel>`_ model to them.
-
-The input consists of a set of trials (``X``), each containing a list of
-observation sequences, one per trial. The output is the ``projection``
-(``Z``) of the data in a space of pre-chosen dimensionality ``z_dim < x_dim``.
-
-Under the assumption of a linear relation (transform matrix ``C``) between the
-latent variable ``Z`` following a Gaussian process and the observation ``X``
-with a ``bias d`` and a ``noise term of zero mean`` and ``(co)variance R``
-(i.e., :math:`X = C @ Z + d + Gauss(0, R)`), the ``projection corresponds`` to
-the conditional probability :math:`E[Z|X]`. The parameters (``C, d, R``) as
-well as the ``time scales`` and ``variances of the Gaussian process`` are
-estimated from the data using an ``expectation-maximization (EM)`` algorithm.
-
-Internally, the analysis consists of the following steps:
-
-1.  ``expectation-maximization`` for fitting of the parameters ``C, d, R``,
-    theta (the log(kernel parameters) i.e., time-scales) and variances of
-    the Gaussian process, using all trials provided as input (:func:`_em()`)
-
-2.  perform orthonormalization of the matrix ``C`` (:func:`fit()`)
-
-3.  projection of single trials into the latent space
-    (:func:`_infer_latents()`)
-
-4.  prediction and orthonormalization of the corresponding subspace,
-    for visualization purposes (:func:`predict()`)
-
-.. autosummary::
-    :toctree: _toctree/gpfa
-
-    GPFA
-
-Original code
--------------
-The code was ported from the MATLAB code based on Byron Yu's implementation.
-The original MATLAB code is available at Byron Yu's website:
-https://users.ece.cmu.edu/~byronyu/software.shtml
-
-References
-----------
-.. [Yu2009_614] `Yu, Byron M and Cunningham, John P and Santhanam, Gopal and
-    Ryu, Stephen and Shenoy, Krishna V and Sahani, Maneesh
-    "Gaussian-process factor analysis for low-dimensional single-trial
-    analysis of neural population activity"
-    In Journal of Neurophysiology, Vol. 102, Issue 1. pp. 614-635.
-    <https://doi.org/10.1152/jn.90941.2008>`_
-
-"""
-
 from __future__ import division, print_function, unicode_literals
 
 import time
@@ -88,40 +28,28 @@ __all__ = [
 
 
 class GPFA(sklearn.base.BaseEstimator):
-    """
-    Applying Gaussian process factor analysis (GPFA) to observed data.
+    """Gaussian Process Factor Analysis (GPFA) is a probabilistic modeling
+    approach designed for dimensionality reduction and smoothe latent
+    trajectories extraction from noisy, high-dimensional time series data.
+    By integrating the concepts of Factor Analysis and Gaussian Processes,
+    GPFA seeks to uncover latent trajectories—hidden factors—underlying
+    observed time series  data by modeling their relationships through a 
+    Gaussian Process prior. Through an iterative Expectation-Maximization
+    (EM) algorithm, GPFA uncovers latent trajectories and optimizes model
+    parameters.
 
-    There are two principle scenarios of using the GPFA analysis, both of which
-    can be performed in an instance of the :class:`GPFA()` class.
+    GPFA operates on a sequence of data, each some (sparse) matrix of
+    ``x_dim`` x ``bins``. It uses the same model parameters across all data
+    in the sequence, and to predict latent space sequences for all data.
 
-    In the first scenario, only one single dataset is used to fit the model and
-    to extract the trajectories. The parameters that describe the
-    transformation are first extracted from the data using the :func:`fit()`
-    method of the GPFA class. Then the same data is projected into the
-    orthonormal basis using the method :func:`predict()`.
-
-    In the second scenario, a single dataset is split into training and test
-    datasets. Here, the parameters are estimated from the training data. Then
-    the test data is projected into the latent space previously obtained from
-    the training data. This analysis is performed by executing first the
-    :func:`fit()` method on the training data, followed by the
-    :func:`predict()` method on the test dataset.
-
-    The GPFA class is compatible to the ``cross-validation`` functions of
-    ``sklearn.model_selection``, such that users can perform cross-validation
-    to search for a set of parameters yielding best performance using these
-    functions. Furthermore, it is compatible with more generic kernel functions
-    of the ``sklearn.gaussian_process.kernels``. Users can define or compose a
-    set of kernels which can be passed as a parameter when initializing the
-    GPFA class.
+    ...
+    Read more on the :ref:`main page <main_page>`
+    ...
 
     Parameters
     ----------
-    z_dim : int, optional, default=3
-        latent state dimensionality
-
     bin_size : float, optional, default=0.02
-        observed data bin width in sec
+        Width of observed data bins in seconds.
 
     gp_kernel : kernel instance, default=None
         If ``None`` is passed, the kernel defaults to::
@@ -140,70 +68,145 @@ class GPFA(sklearn.base.BaseEstimator):
             will be replicated across all latent dimensions) or a sequence
             of kernels, one per latent dimension
 
+    z_dim : int, optional, default=3
+        Dimensionality of latent space.
+
     min_var_frac : float, optional, default=0.01
-        fraction of overall data variance for each observed dimension to set as
-        the private variance floor.  This is used to combat Heywood cases,
+        Fraction of overall data variance for each observed dimension to set as
+        the private variance floor. This is used to combat Heywood cases,
         where ML parameter learning returns one or more zero private variances.
         (See Martin & McDonald, Psychometrika, Dec 1975.)
 
     em_tol : float, optional, default=1e-8
-        stopping criterion for EM
+        Stopping criterion for EM algorithm.
 
     em_max_iters : int, optional, default=500
-        number of EM iterations to run
+        Maximum number of EM iterations to run.
 
     freq_ll : int, optional, default=5
-        data likelihood is computed at every `freq_ll` EM iterations.
-        ``freq_ll = 1`` means that data likelihood is computed at every
-        iteration.
+        Frequency at which data likelihood is computed during EM iterations.
 
     verbose : bool, optional, default=False
-        specifies whether to display status messages
+        Determines whether to display status messages.
+
 
     Attributes
     ----------
     valid_data_names_ : tuple of str
         Names of the data contained in the resultant data structure, used to
-        check the validity of users' request
+        check the validity of users' request.
 
-    Estimated model parameters. Updated when calling fit() method
+    gp_kernel.theta : numpy.ndarray
+        Flattened and log-transformed non-fixed hyperparameters
+        for optimization. These hyperparameters correspond to the
+        characteristic timescales.
 
-    gp_kernel.theta : numpy.array
-        the flattened and log-transformed non-fixed hyperparams
-        to which optimization is performed,
-        where :math:`theta = log(kernel parameters)`
-    d_ : numpy.ndarray of shape (x_dim, 1)
-        observation mean
-    C_ : numpy.ndarray of shape (x_dim, z_dim)
-        loading matrix, representing the mapping between the observed data
-        space and the latent variable space
-    R_ : numpy.ndarray of shape (x_dim, x_dim)
-        observation noise covariance
+    d_ : numpy.ndarray, shape (x_dim, 1)
+        Observation mean.
+
+    C_ : numpy.ndarray, shape (x_dim, z_dim)
+        Loading matrix, mapping observed data space to latent trajectory space.
+
+    R_ : numpy.ndarray, shape (x_dim, x_dim)
+        Observation noise covariance.
 
     fit_info_ : dict
         Information of the fitting process. Updated at each run of the
-        :func:`fit()` method.
+        :meth:`fit` method.
 
-        iteration_time : list
-            containing the runtime for each iteration step in the EM algorithm.
+        - `iteration_time` : list
+            Runtime for each iteration step in the EM algorithm.
 
-        log_likelihoods : list
-            log likelihoods after each EM iteration.
+        - `log_likelihoods` : list
+            Log likelihoods after each EM iteration.
 
     train_latent_seqs_ : numpy.recarray
-        a copy of the training data structure, augmented with the new
-        fields:
+        Copy of the training data structure, augmented with new fields.
 
-        pZ_mu : numpy.ndarray of shape (z_dim x bins)
-            posterior mean of latent variables at each time bin
+        pZ_mu : numpy.ndarray, shape (z_dim, bins)
+            Posterior mean of latent variables at each time bin.
 
-        pZ_cov : numpy.ndarray of shape (z_dim, z_dim, bins)
-            posterior covariance between latent variables at each
-            timepoint
+        pZ_cov : numpy.ndarray, shape (z_dim, z_dim, bins)
+            Posterior covariance between latent variables at each time point.
 
-        pZ_covGP : numpy.ndarray of shape (bins, bins, z_dim)
-            posterior covariance over time for each latent
-            variable
+        pZ_covGP : numpy.ndarray, shape (bins, bins, z_dim)
+            Posterior covariance over time for each latent variable.
+
+
+    Notes
+    -----
+    **Applying GPFA to new data:**
+    There are two principle scenarios of using the GPFA analysis, both of which
+    can be performed in an instance of the :class:`GPFA()` class.
+
+    In the first scenario, only one single dataset is used to fit the model and
+    to extract the trajectories. The parameters that describe the
+    transformation are first extracted from the data using the :func:`fit()`
+    method of the GPFA class. Then the same data is projected into the
+    orthonormal basis using the method :func:`predict()`.
+
+    In the second scenario, a single dataset is split into training and test
+    datasets. Here, the parameters are estimated from the training data. Then
+    the test data is projected into the latent space previously obtained from
+    the training data. This analysis is performed by executing first the
+    :func:`fit()` method on the training data, followed by the
+    :func:`predict()` method on the test dataset.
+
+    The GPFA class is compatible to the `cross-validation (CV)
+    <https://scikit-learn.org/stable/modules/generated/
+    sklearn.model_selection.cross_validate.html#sklearn.
+    model_selection.cross_validate>`_ functions of
+    `sklearn.model_selection <https://scikit-learn.org/stable/modules/
+    classes.html#module-sklearn.model_selection>`_, such that users can
+    perform cross-validation to search for a set of parameters yielding
+    best performance using these functions. Furthermore, it is compatible
+    with more generic kernel functions of the
+    `sklearn.gaussian_process.kernels <https://scikit-learn.org/stable/
+    modules/generated/sklearn.gaussian_process.kernels.Kernel.html>`_.
+    Users can define or compose a set of kernels which can be passed as a
+    parameter when initializing the GPFA class.
+
+    The input consists of a set of trials :math:`X`, each containing a list of
+    observation sequences, one per trial. The output is the ``projection``
+    (:math:`Z`) of the data in a space of pre-chosen dimensionality
+    ``z_dim < x_dim``.
+
+    Under the assumption of a linear relation (transform matrix :math:`C`)
+    between the latent trajectories :math:`Z` following a Gaussian process
+    and the observation :math:`X` with a bias :math:`d` and a ``noise term
+    of zero mean`` and ``(co)variance`` :math:`R`
+    (i.e., :math:`X = CZ + d + Gauss(0, R)`), the ``projection corresponds``
+    to the conditional probability :math:`E[Z|X]`. The parameters
+    (:math:`C, d, R`) as well as the ``timescales`` and ``variances of the
+    Gaussian process`` are estimated from the data using an
+    ``expectation-maximization (EM)`` algorithm.
+
+    Internally, the analysis consists of the following steps:
+
+        1.  ``expectation-maximization`` for fitting of the parameters
+            :math:`C, d, R, {\\theta}`
+            (the :math:`log(\\text{kernel parameters})` i.e., timescales)
+            and variances of the Gaussian Process, using all trials provided
+            as input (:func:`_em()`).
+
+        2.  perform orthonormalization of the matrix :math:`C` (:func:`fit()`).
+
+        3.  projection of single trials into the latent space
+            (:func:`_infer_latents()`).
+
+        4.  prediction and orthonormalization of the corresponding subspace,
+            for visualization purposes (:func:`predict()`).
+
+        5.  computation of the total explained variance
+            (:func:`variance_explained()`) and the variance explained by each
+            latent trajectory.
+
+        6.  computation of the log-likelihood of the data (:func:`score()`)
+
+
+    Examples
+    --------
+        Refere to :ref:`examples <examples>` for usage example.
 
     Methods
     -------
@@ -215,91 +218,6 @@ class GPFA(sklearn.base.BaseEstimator):
         Returns the log-likelihood scores.
     variance_explained:
         Computes the total explained vairaince regression score.
-
-    Examples
-    --------
-    The following example computes the trajectories sampled from a random
-    multivariate Gaussian process.
-
-    >>> import numpy as np
-    >>> from gpfa import GPFA
-    >>> from sklearn.gaussian_process.kernels import RBF, WhiteKernel
-    >>> from sklearn.gaussian_process.kernels import ConstantKernel
-
-    >>> # set random parameters
-    >>> seed = [0, 8, 10]
-    >>> z_dim = 3
-    >>> units = 10
-    >>> tau_f = 0.1
-    >>> sigma_n = 0.001
-    >>> sigma_f = 1 - sigma_n
-    >>> bin_size = 0.02  # [s]
-    >>> num_trials = 3
-    >>> n_timesteps = 500
-    >>> kernel = ConstantKernel(
-    ...                    sigma_f, constant_value_bounds='fixed'
-    ...                    ) * RBF(length_scale=tau_f) + ConstantKernel(
-    ...                    sigma_n, constant_value_bounds='fixed'
-    ...                    ) * WhiteKernel(
-    ...                        noise_level=1, noise_level_bounds='fixed'
-    ...                    )
-    >>> tsdt = np.arange(0, n_timesteps) * bin_size
-    >>> mu = np.zeros(tsdt.shape)
-    >>> cov = kernel(tsdt[:, np.newaxis])
-    >>> C = np.random.uniform(0, 2, (units, z_dim))     # loading matrix
-    >>> obs_noise = np.random.uniform(0.2, 0.75, units) # rand noise parameters
-    >>> X = []
-    >>> for n in range(num_trials):
-    >>>     np.random.seed(seed[n])
-    >>>     # Draw three latent state samples from a Gaussian process
-    >>>     # using the above cov
-    >>>     Z = np.random.multivariate_normal(mu.ravel(), cov, z_dim)
-    >>>     # observations have Gaussian noise
-    >>>     x = C @ Z + np.random.normal(0, obs_noise, (n_timesteps, units)).T
-    >>>     X.append(x)
-    >>> gpfa = GPFA(bin_size=bin_size, z_dim=z_dim)
-    >>> gpfa.fit(X)
-    Initializing parameters using factor analysis...
-    Fitting GPFA model...
-    >>> results, _ = gpfa.predict(returned_data=['pZ_mu', 'pZ_mu_orth'])
-    >>> pZ_mu_orth = results['pZ_mu_orth']
-    >>> pZ_mu = results['pZ_mu']
-    >>> gpfa.variance_explained()
-    (0.93590..., array([0.76541..., 0.10446..., 0.066033...]))
-
-    >>> # GPFA on synthetic spike data
-    >>> import numpy as np
-    >>> from gpfa import GPFA
-    >>> from gpfa.preprocessing import EventTimesToCounts
-    >>> from sklearn.preprocessing import FunctionTransformer
-    >>> seed = [0, 8, 10, 42, 60]
-    >>> rate = 50
-    >>> units = 10
-    >>> durations = [500, 550, 600, 650, 700]  # [ms]
-    >>> num_trials = len(durations)
-    >>> X = np.zeros(num_trials, object)
-    >>> for i in range(num_trials):
-    >>>     np.random.seed(seed[i])
-    >>>     Data[i] = np.random.poisson(rate, (units, durations[i]))
-    >>> event_times_to_counts = EventTimesToCounts(extrapolate_last_bin=True)
-    >>> binned_spiketrians = [
-    ...    event_times_to_counts.transform(x_i) for x_i in X
-    ...    ]
-    >>> fun_trans = FunctionTransformer(np.sqrt)
-    >>> sqrt_spike_trains = [
-    ...    fun_trans.transform(x_i) for x_i in binned_spiketrians
-    ...    ]
-    >>> z_dim = 3
-    >>> bin_size = 0.02  # [s]
-    >>> gpfa = GPFA(bin_size=bin_size, z_dim=z_dim, em_max_iters=2)
-    >>> gpfa.fit(X)
-    Initializing parameters using factor analysis...
-    Fitting GPFA model...
-    >>> results, _ = gpfa.predict(returned_data=['pZ_mu','pZ_mu_orth'])
-    >>> pZ_mu_orth = results['pZ_mu_orth']
-    >>> pZ_mu = results['pZ_mu']
-    >>> gpfa.variance_explained()
-    (0.98518..., array([9.85162126e-01, 1.32456401e-05, 7.66699002e-06]))
     """
 
     def __init__(self, bin_size=0.02, gp_kernel=None, z_dim=3,
@@ -354,7 +272,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X   : an array-like, default=None
+        X : an array-like, default=None
             An array-like of observation sequences, one per trial.
             Each element in `X` is a matrix of size ``x_dim x bins``,
             containing an observation sequence. The input dimensionality
@@ -362,17 +280,8 @@ class GPFA(sklearn.base.BaseEstimator):
             can be different for each observation sequence.
 
         use_cut_trials : bool, optional, default=False
-            `use_cut_trials=True` results in using an approximation that might
-            make the fitting computations more efficient. In most cases, this
-            approximation shouldn't impact the fits qualitatively. It might do
-            so if the data is expected to have very slow (i.e., long timescale)
-            latent fluctuations.
-
-            .. warning:: One of the default parameters in :func:`_cut_trials`
-                is ``seg_length=20``. This defines a the length of segment to
-                extract in number of timesteps. If the number of timesteps is
-                smaller than ``seg_length``, the trial will be skipped. See
-                :func:`_cut_trials` for details.
+            If True, an approximation is used to potentially enhance fitting
+            efficiency without compromising quality.
 
         Returns
         -------
@@ -383,6 +292,63 @@ class GPFA(sklearn.base.BaseEstimator):
         ------
         ValueError
             If covariance matrix of input data is rank deficient.
+
+        Notes
+        -----
+        Fitting in Gaussian Process Factor Analysis (GPFA) involves
+        the estimation of model parameters and latent variables to
+        best explain the observed time series data. This process is
+        achieved through the Expectation-Maximization (EM) algorithm,
+        tailored to handle the specific characteristics of GPFA. The
+        EM algorithm's application to GPFA involves the following steps:
+
+            1. **Initialization:** The EM algorithm begins with parameter
+               initialization. Initialize key model parameters such as the
+               loading matrix :math:`C`, bias term :math:`d`, covariance
+               matrix :math:`R`, and the characteristic timescales
+               :math:`{\\theta}`. Initialization can significantly impact the
+               convergence and quality of results, so it is important to
+               choose initial values carefully. In this implementation, the
+               initial values are obtained by applying factor analysis to the
+               observed data after kernel smoothing.
+
+            2. **E-Step (Expectation Step):** Given current parameter
+               estimates, compute the posterior distribution of latent
+               variables :math:`Z`, reflecting their role in explaining
+               observed data. Calculate the expected complete data
+               log-likelihood based on this posterior distribution.
+
+            3. **M-Step (Maximization Step):** In the M-step, the model
+               parameters are updated to maximize the expected complete data
+               log-likelihood derived from the E-step. Specifically, adjust
+               :math:`C`, :math:`d`, :math:`R`, and :math:`{\\theta}` using the
+               computed expectations and observed data.
+
+            4. **Iterate E-Step and M-Step:** Repeatedly execute the E-step
+               and M-step iteratively until convergence (i.e., parameter
+               changes are minimal or a maximum iteration count is met). Each
+               iteration involves computing latent trajectories posteriors and
+               updating parameters. Upon convergence, the estimated parameters
+               represent the acquired GPFA model, best explaining observed
+               data.
+
+        **Use of the `use_cut_trials` parameter:** The ``use_cut_trials``
+        parameter, if set to True, enables an
+        approximation that can enhance fitting computations' efficiency.
+        This approximation should not significantly affect the quality of
+        the fit in most cases. However, for data with very slow latent
+        fluctuations (i.e., long timescales), using this option might lead
+        to qualitative differences in the fit results.
+
+        Note that one of the default parameters in :func:`_cut_trials()`
+        is ``seg_length=20``, determining the length of segments to
+        extract. If the number of timesteps is smaller than `seg_length`,
+        the trial will be skipped. Refer to :func:`_cut_trials()` for details.
+
+        **Orthonormalization:** An orthonormalization transform is applied to
+        the loading matrix `C` to ensure the columns of `C` are orthonormal.
+        This step helps improve the interpretability of the latent dimensions
+        and simplifies further analysis of the model's results.
         """
         # ====================================================================
         # Cut trials: Extracts trial segments that are all of the same length.
@@ -489,7 +455,7 @@ class GPFA(sklearn.base.BaseEstimator):
             e.g: ``returned_data = ['pZ_mu_orth']``. The dimensionality
             reduction generates the following resultant data:
 
-                ``pZ_mu`` : posterior mean of latent variable before
+                ``pZ_mu`` : posterior mean of latent trajectories before
                 orthonormalization
 
                 ``pZ_mu_orth`` : orthonormalized posterior mean of latent
@@ -529,8 +495,9 @@ class GPFA(sklearn.base.BaseEstimator):
 
                 ``X`` :  (x_dim, # bins) numpy.ndarray
 
-            Note that the num. of bins (# bins) can vary across trials,
-            reflecting the trial durations in the given `observed` data.
+            .. note::
+                Note that the number of bins (# bins) can vary across trials,
+                reflecting the trial durations in the given `observed` data.
 
         lls : float
             data log likelihoods
@@ -558,8 +525,8 @@ class GPFA(sklearn.base.BaseEstimator):
 
     def score(self, X=None):
         """
-        Returns the ``log-likelihood`` scores. If `X = None`, the training
-        data ``log-likelihood`` scores will be returned.
+        Returns the `log-likelihood` scores. If `X = None`, the training
+        data `log-likelihood` scores will be returned.
 
         Parameters
         ----------
@@ -582,18 +549,39 @@ class GPFA(sklearn.base.BaseEstimator):
 
     def variance_explained(self):
         """
-        Computes the total explained vairaince regression score using
-        :math:`R^2` (coefficient of determination) for overall `X`.
-        The ``total explained variance`` is decomposed into individual
-        contributions ``by each orthonormalized latent variable``.
+        Computes the total explained variance regression score using
+        :math:`R^2` (coefficient of determination) for the overall `X`.
+
+        The `total explained variance` is decomposed into individual
+        contributions by each orthonormalized latent trajectory.
 
         Returns
         -------
         R2 : float
-                The total :math:`R^2` score i.e., the total variance
-                explained
+            The total :math:`R^2` score, i.e., the total variance explained.
+            Calculated as
+            `(total variance - residual variance) / total variance`.
+
         latent_R2s : numpy.array
-                The variance explained by each latent
+            An array containing the variance explained by each latent
+            trajectory.
+
+        Notes
+        -----
+        This function calculates the coefficient of determination (R^2) to
+        measure how well the latent trajectories explain the variance in the
+        observed data. It follows these steps:
+
+            1. Compute the total explained variance (`var_total`) across all
+               bins and trials.
+            2. Calculate the residual variance (`var_res`) by decomposing the
+               total explained variance (`var_total`).
+            3. Compute the explained sum of squares (`SSreg`) for each latent
+               trajectory.
+            4. Sum up the `SSreg` values to obtain the total :math:`R^2` score.
+            5. Calculate the variance explained by each latent trajectory and
+               store it in `latent_R2s`.
+
         """
         seqs, _ = self.predict(returned_data=['X', 'pZ_mu_orth'])
         X, pZ_mu_orth = seqs['X'], seqs['pZ_mu_orth']
@@ -789,7 +777,7 @@ class GPFA(sklearn.base.BaseEstimator):
             pZ_cov : (z_dim, z_dim, bins) numpy.ndarray
                 posterior covariance between latent variables at each timepoint
             pZ_covGP : (bins, bins, z_dim) numpy.ndarray
-                    posterior covariance over time for each latent variable
+                    posterior covariance over time for each latent trajectory
         ll : float
             data log likelihood, returned when `get_ll` is set True
         """
@@ -958,7 +946,7 @@ class GPFA(sklearn.base.BaseEstimator):
             pZ_cov : numpy.ndarray of shape (z_dim, z_dim, bins)
                 posterior covariance between latent variables at each timepoint
             pZ_covGP : numpy.ndarray of shape (bins, bins, z_dim)
-                posterior covariance over time for each latent variable
+                posterior covariance over time for each latent trajectory
 
         Returns
         -------
@@ -1200,20 +1188,20 @@ class GPFA(sklearn.base.BaseEstimator):
         theta : numpy.array
             the flattened and log-transformed non-fixed hyperparams
             to which optimization is performed,
-            where :math:`theta = log(kernel parameters)`
+            where :math:`{\\theta} = log(\\text{kernel parameters})`
         gp_kernel_i : kernel instance
-            the i-th GP kernel corresponding to the i-th latent variable
+            the i-th GP kernel corresponding to the i-th latent trajectory
         precomp : numpy.recarray
             structure containing precomputations
         i : int
-            The i-th index of the i-th latent variable
+            The i-th index of the i-th latent trajectory
 
         Returns
         -------
         f : float
-            values of objective function E[log P({x},{y})] at theta
+            values of objective function E[log P({x},{y})] at {\\theta}
         df_arr : numpy.array
-            gradients at theta
+            gradients at {\\theta}
         """
         gp_kernel_i.theta = theta
         Kmax, K_gradient = gp_kernel_i(

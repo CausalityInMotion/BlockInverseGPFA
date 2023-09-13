@@ -3,14 +3,6 @@
 # license Modified BSD, see LICENSE.txt for details.
 # ...
 
-"""
-GPFA preprocessing class for neural data.
-
-.. autosummary::
-    :toctree: _toctree/preprocessing
-
-    EventTimesToCounts
-"""
 from __future__ import division, print_function, unicode_literals
 
 import sklearn
@@ -23,47 +15,37 @@ __all__ = [
 
 class EventTimesToCounts(sklearn.base.TransformerMixin):
     """
-    This class bins spike trains of time points and provides
-    methods that control if the last bin includes ``t_stop``
-    and covernts ``neo.SpikeTrains`` data to a matrix with counted
-    time points. The user has the option to specify ``t_stop``,
-    but if it is not specified, it is handled in two ways depending
-    on the data type of ``X``. If ``X`` is a ``neo.SpikeTrain``
-    object, ``t_stop`` is set to ``X[0].t_stop.magnitude`` since it
-    is assumed that ``t_stop`` is the same across all neurons.
-    Otherwise, ``t_stop`` is obtained by finding the largest spike
-    time across all neurons. To extrapolate the last bin, a small
-    fraction of the ``bin_size`` is added to the ``t_stop`` to ensure
-    that it is included within the last bin.
+    Bins spike trains of time points and converts them into matrices
+    with counted time points.
+
+    This class allows you to bin spike trains represented as time points,
+    converting them into matrices that represent event counts within each bin.
+    It provides options for specifying the bin size, handling the last bin's
+    inclusion of `t_stop`, and automatically determining `t_stop` if it's not
+    provided.
 
     Parameters
     ----------
     bin_size : float, default : 0.02 [s]
-        Data bin width in [s] e.g., 0.02, 0.05, 0.1, 1, etc.
+        The width of each data bin in seconds (e.g., 0.02, 0.05, 0.1, 1, etc.).
 
     t_stop : float, optional, default : None
-        The stop time of the trial. If not specified, it is
-        retrieved from the `t_stop` attribute of ``neo.Spiketrain``
-        or defaults to the largest spike time across all neurons.
+        The end time of the trial. If not specified, it is determined based on
+        the provided data. If the data is a `neo.SpikeTrain` object, `t_stop`
+        is set to `X[0].t_stop.magnitude`, assuming a common `t_stop` across
+        all neurons. Otherwise, `t_stop` is determined as the largest spike
+        time across all neurons. To ensure the last bin includes `t_stop`, a
+        small fraction of `bin_size` is added to `t_stop`.
 
     extrapolate_last_bin : boolean, optional, default : False
-        Controls if the last bin includes t_stop.
-        If ``False``, the last bin is the one before ``t_stop`` (or
-        includes ``t_stop`` if it matches the bin's final edge). Then,
-        all events after the bin's final edge are ignored. In this
-        case, ``X_out`` contains integer event counts.
-
-        If ``True``, the last bin includes ``t_stop``, and the event
-        counts are extrapolated to take into account that ``t_stop`` is
-        smaller than the last bin's final edge. In this case, ``X_out``
-        contains ``float`` event counts which, for the final bin, might
-        be ``non-integer`` values.
-
-
-    Methods
-    -------
-    transform:
-        Transforms data from event times to binned counts
+        Controls whether the last bin includes `t_stop`. If `False`, the last
+        bin is the one before `t_stop` (or includes `t_stop` if it matches the
+        bin's final edge). Events after the bin's final edge are ignored, and
+        `X_out` contains integer event counts. If `True`, the last bin includes
+        `t_stop`, and event counts are extrapolated to account for the fact
+        that `t_stop` is smaller than the last bin's final edge. In this case,
+        `X_out` contains `float` event counts, which may be non-integer for the
+        final bin.
 
     Examples
     --------
@@ -143,6 +125,11 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
     >>> ettc.transform(neoSpikeTrain)
     array([[1, 2, 0, 0, 1, 2, 0, 1],
            [1, 0, 1, 0, 1, 1, 1, 0]])
+
+    Methods
+    -------
+    transform:
+        Transforms data from event times to binned counts
 
     """
     def __init__(self, bin_size=0.02, t_stop=None,
