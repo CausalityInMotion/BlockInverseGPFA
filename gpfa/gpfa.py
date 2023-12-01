@@ -151,7 +151,7 @@ class GPFA(sklearn.base.BaseEstimator):
        The standard approach to identify the best value for ``z_dim`` is to
        perform cross validation. First, one splits the data into a training and
        a test set, and fits GPFA to the training set only, using :func:`fit`.
-       Second, it applies :func:`predict` to the test set, to compute the
+       Second, one applies :func:`predict` to the test set, to compute the
        test set data log-likelihood. This procedure is repeated for different
        ``z_dim`` values, to identify the ``z_dim`` leading to the best
        test set data log-likelihood.
@@ -184,35 +184,11 @@ class GPFA(sklearn.base.BaseEstimator):
     log-transformed in attribute ``gp_kernel.theta``). Please consult the
     :ref:`main page <gpfa_prob_model>` for how these attributes parameterize
     the probabilistic model underlying GPFA. Parameter fitting is performed by
-    the Expectation Maximization (EM) method.
-
-    TODO: cut the below, as it relates working of :meth:`fit`
-
-    Internally, the analysis consists of the following steps:
-
-        1.  ``expectation-maximization`` for fitting of the parameters
-            :math:`C, d, R, {\\theta}`
-            (the :math:`log(\\text{kernel parameters})` i.e., timescales)
-            and variances of the Gaussian Process, using all trials provided
-            as input (:func:`_em()`).
-
-        2.  perform orthonormalization of the matrix :math:`C` (:func:`fit()`).
-
-        3.  projection of single trials into the latent space
-            (:func:`_infer_latents()`).
-
-        4.  prediction and orthonormalization of the corresponding subspace,
-            for visualization purposes (:func:`predict()`).
-
-        5.  computation of the total explained variance
-            (:func:`variance_explained()`) and the variance explained by each
-            latent trajectory.
-
-        6.  computation of the log-likelihood of the data (:func:`score()`)
+    the Expectation Maximization method. See :meth:`fit` for details.
 
     Examples
     --------
-        Refere to :ref:`examples <examples>` for usage example.
+        Refer to :ref:`examples <examples>` for usage example.
 
     Methods
     -------
@@ -272,22 +248,29 @@ class GPFA(sklearn.base.BaseEstimator):
 
     def fit(self, X, use_cut_trials=False):
         """
-        Fit the model with the given training data. This ceates and adjusts
-        all the attributes by EM algorithm. And applies an orthonormalization
-        transform to the loading matrxi.
+        Fit the GPFA model parameters to the given training data using the
+        Expectation Maximization algorithm. The function also computes the
+        orthonormalization transform of the loading matrix for subsequent use
+        by :meth:`predict`.
 
         Parameters
         ----------
-        X : an array-like, default=None
-            An array-like of observation sequences, one per trial.
-            Each element in `X` is a matrix of size ``x_dim x bins``,
-            containing an observation sequence. The input dimensionality
-            ``x_dim`` needs to be the same across elements in `X`, but ``bins``
-            can be different for each observation sequence.
+        X : array-like, default=None
+            An array-like sequence of high-dimensional time-series.
+            Each element :math:`\\boldsymbol{X}_n` in this sequence is an
+            ``x_dim`` x ``bins`` matrix containing a sequence of
+            ``x_dim``-dimensional observations along its columns. The
+            observation dimensionality ``x_dim`` needs to be the same across
+            each :math:`\\boldsymbol{X}_n`, but ``bins`` can differ across
+            them. The order in which the elements :math:`\\boldsymbol{X}_1,
+            \\boldsymbol{X}_2, \\dots` are provided in the sequence is
+            arbitrary and has no impact on the fitted parameters.
 
         use_cut_trials : bool, optional, default=False
-            If True, an approximation is used to potentially enhance fitting
-            efficiency without compromising quality.
+            If True, long time-series are cut into multiple shorter ones to
+            potentially speed up training. Note that this approximation might
+            worsen parameter fits, in particular as it removes any
+            long-distance temporal dependencies that might exist in the data.
 
         Returns
         -------
@@ -301,60 +284,36 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Notes
         -----
-        Fitting in Gaussian Process Factor Analysis (GPFA) involves
-        the estimation of model parameters and latent variables to
-        best explain the observed time series data. This process is
-        achieved through the Expectation-Maximization (EM) algorithm,
-        tailored to handle the specific characteristics of GPFA. The
-        EM algorithm's application to GPFA involves the following steps:
 
-            1. **Initialization:** The EM algorithm begins with parameter
-               initialization. Initialize key model parameters such as the
-               loading matrix :math:`C`, bias term :math:`d`, covariance
-               matrix :math:`R`, and the characteristic timescales
-               :math:`{\\theta}`. Initialization can significantly impact the
-               convergence and quality of results, so it is important to
-               choose initial values carefully. In this implementation, the
-               initial values are obtained by applying factor analysis to the
-               observed data after kernel smoothing.
+        The :meth:`fit` method finds the model parameters that best explain the
+        provided data using Expectation Maximization (EM), using the following
+        steps:
 
-            2. **E-Step (Expectation Step):** Given current parameter
-               estimates, compute the posterior distribution of latent
-               variables :math:`Z`, reflecting their role in explaining
-               observed data. Calculate the expected complete data
-               log-likelihood based on this posterior distribution.
+        1. **Initialization**: The emission model parameters,
+           :math:`\\boldsymbol{C}`, :math:`\\boldsymbol{d}`, and
+           :math:`\\boldsymbol{R}` are initialized using Factor Analysis
+           while leaving the latent variable time-course unconstrained.
+           GP kernel parameters are left at their default values.
 
-            3. **M-Step (Maximization Step):** In the M-step, the model
-               parameters are updated to maximize the expected complete data
-               log-likelihood derived from the E-step. Specifically, adjust
-               :math:`C`, :math:`d`, :math:`R`, and :math:`{\\theta}` using the
-               computed expectations and observed data.
+        2. **Expecation step**: Given current parameter estimates,
+           the Expectation step computes the posterior distribution over
+           the latent variables :math:`\\boldsymbol{Z}`, and the complete
+           data log-likelihood.
 
-            4. **Iterate E-Step and M-Step:** Repeatedly execute the E-step
-               and M-step iteratively until convergence (i.e., parameter
-               changes are minimal or a maximum iteration count is met). Each
-               iteration involves computing latent trajectories posteriors and
-               updating parameters. Upon convergence, the estimated parameters
-               represent the acquired GPFA model, best explaining observed
-               data.
+        3. **Maximization step**: Given the :matH:`\\boldsymbol{Z}`-posterior,
+           the Maximization step corresponds to finding the emission model
+           parameters (see first step) that maximize the expected complete data
+           log-likelihood analytically, and optimizes the GP kernel parameters
+           using gradient descent.
 
-        **Use of the `use_cut_trials` parameter:** The ``use_cut_trials``
-        parameter, if set to True, enables an
-        approximation that can enhance fitting computations' efficiency.
-        This approximation should not significantly affect the quality of
-        the fit in most cases. However, for data with very slow latent
-        fluctuations (i.e., long timescales), using this option might lead
-        to qualitative differences in the fit results.
+        4. **EM iteration**: Steps 2 and 3 are repeated until either the change
+           in complete data likelihood drops below the set threshold, or if the
+           maximum number of interations is reached.
 
-        Note that one of the default parameters in :func:`_cut_trials()`
-        is ``seg_length=20``, determining the length of segments to
-        extract. If the number of timesteps is smaller than `seg_length`,
-        the trial will be skipped. Refer to :func:`_cut_trials()` for details.
-
-        **Orthonormalization:** An orthonormalization transform is applied to
-        the loading matrix `C` to ensure the columns of `C` are orthonormal.
-        This step helps improve the interpretability of the latent dimensions
-        and simplifies further analysis of the model's results.
+        **Orthonormalization:** Finally, this function computes an
+        orthonormalization transform to the loading matrix
+        :math:`\\boldsymbol{C}` that is in turn used by :meth:`predict` to
+        return an orthonormalized set of latent variables.
         """
         # ====================================================================
         # Cut trials: Extracts trial segments that are all of the same length.
