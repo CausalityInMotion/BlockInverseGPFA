@@ -255,7 +255,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Parameters
         ----------
-        X : array-like, default=None
+        X   : array-like, default=None
             An array-like sequence of high-dimensional time-series.
             Each element :math:`\\boldsymbol{X}_n` in this sequence is an
             ``x_dim`` x ``bins`` matrix containing a sequence of
@@ -268,9 +268,11 @@ class GPFA(sklearn.base.BaseEstimator):
 
         use_cut_trials : bool, optional, default=False
             If True, long time-series are cut into multiple shorter ones to
-            potentially speed up training. Note that this approximation might
-            worsen parameter fits, in particular as it removes any
-            long-distance temporal dependencies that might exist in the data.
+            potentially speed up training.
+
+            .. attention:: Cutting long time-series might worsen parameter
+                fits, in particular as it removes any long-distance temporal
+                dependencies that might exist in the data.
 
         Returns
         -------
@@ -284,7 +286,6 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Notes
         -----
-
         The :meth:`fit` method finds the model parameters that best explain the
         provided data using Expectation Maximization (EM), using the following
         steps:
@@ -398,71 +399,65 @@ class GPFA(sklearn.base.BaseEstimator):
 
     def predict(self, X=None, returned_data=['pZ_mu_orth']):
         """
-        Obtain trajectories in a latent space by inferring the
-        posterior mean of the obtained GPFA model and applying
-        an orthonormalization on the latent space.
+        Provides the inferred latent variable time-courses and other
+        moments thereof, if requested.
 
         Parameters
         ----------
-        X   : an array-like, default=None
-            An array-like of observation sequences, one per trial.
-            Each element in `X` is a matrix of size ``x_dim x bins``,
-            containing an observation sequence. The input dimensionality
-            ``x_dim`` needs to be the same across elements in `X`, but ``bins``
-            can be different for each observation sequence.
+        X   : array-like, default=None
+            An array-like sequence of time-series. The format is the same
+            as for :meth:`fit`.
 
             .. note::
-                If X=None, the latent state estimates for the training
-                set are returned.
+                If ``X=None``, the latent state estimates for the last ``X``
+                that :meth:`fit` was called with are returned.
 
         returned_data : list of str, default ['pZ_mu_orth']
-            Sets `returned_data` to a list of str of desired resultant data
-            e.g: ``returned_data = ['pZ_mu_orth']``. The dimensionality
-            reduction generates the following resultant data:
+            Determines which moments of the inferred latent variable
+            time-courses, and other data are returned. Valid strings are:
 
-                ``pZ_mu`` : posterior mean of latent trajectories before
+                ``'pZ_mu'`` : posterior mean of latent variables before
                 orthonormalization
 
-                ``pZ_mu_orth`` : orthonormalized posterior mean of latent
+                ``'pZ_mu_orth'`` : orthonormalized posterior mean of latent
                 variable
 
-                ``pZ_cov`` : posterior covariance between latent variables
+                ``'pZ_cov'`` : posterior covariance between latent variables
 
-                ``pZ_covGP`` : posterior covariance over time for each latent
+                ``'pZ_covGP'`` : posterior covariance over time for each latent
                 variable
 
-                ``X`` : observed data used to estimate the GPFA model
+                ``'X'`` : time-series data used to estimate the GPFA model
                 parameters
-
-            .. attention:: returned_data specifies the keys by which the data
-                dict is returned.
 
         Returns
         -------
         numpy.ndarray or dict
-            When the length of `returned_data` is one, a single 
-            ``numpy.ndarray``, containing the requested data (the first
-            entry in `returned_data` keys list), is returned. Otherwise,
-            a ``dict`` of multiple ``numpy.ndarrays`` with the ``keys`` 
-            identical to the data names in `returned_data` is returned.
+            Returns a single ``numpy.ndarray`` if only a single string is
+            provided to the ``returned_data`` argument, containing the
+            requested data. If multiple strings are provided, then the
+            method returns a dictionaries whose keys match the strings
+            provided to ``returned_data``.
 
-            The N-th entry of each numpy.ndarray is a numpy.ndarray of the
-            following shape, specific to each data type, containing the
-            corresponding data for the n-th trial:
+            Either way, the :math:`n` th item in either of the returned
+            `numpy.ndarray` provides the latent state moments associated with
+            the :math:`n` th time-series in the provided ``X``. Its size
+            differs depending on the requested moment, and is
 
                 ``pZ_mu``: numpy.ndarray of shape (z_dim x bins)
 
                 ``pZ_mu_orth``: numpy.ndarray of shape (z_dim x bins)
 
-                ``pZ_cov``: numpy.ndarray of shape (z_dim, z_dim, bins)
+                ``pZ_cov``: numpy.ndarray of shape (z_dim x z_dim x bins)
 
-                ``pZ_covGP``: numpy.ndarray of shape (bins, bins, z_dim)
+                ``pZ_covGP``: numpy.ndarray of shape (bins x bins x z_dim)
 
-                ``X`` :  (x_dim, # bins) numpy.ndarray
+                ``X`` : numpy.ndarray of shape (x_dim x bins)
 
             .. note::
-                Note that the number of bins (# bins) can vary across trials,
-                reflecting the trial durations in the given `observed` data.
+                Note that the number of bins (``bins``) can vary across
+                elements in the sequence, reflecting the length of the time
+                series in the provided time-series data.
 
         lls : float
             data log likelihoods
@@ -470,7 +465,7 @@ class GPFA(sklearn.base.BaseEstimator):
         Raises
         ------
         ValueError
-            If `returned_data` contains keys different from the ones in
+            If `returned_data` contains strings that aren't present in
             `self.valid_data_names_`.
         """
         invalid_keys = set(returned_data).difference(self.valid_data_names_)
@@ -490,22 +485,23 @@ class GPFA(sklearn.base.BaseEstimator):
 
     def score(self, X=None):
         """
-        Returns the `log-likelihood` scores. If `X = None`, the training
+        Returns the `log-likelihood` scores. If ``X = None``, the training
         data `log-likelihood` scores will be returned.
 
         Parameters
         ----------
         X   : an array-like, default=None
-            An array-like of observation sequences, one per trial.
-            Each element in `X` is a matrix of size ``x_dim x bins``,
-            containing an observation sequence. The input dimensionality
-            ``x_dim`` needs to be the same across elements in `X`, but ``bins``
-            can be different for each observation sequence.
+            An array-like sequence of time-series. The format is the same as
+            for :meth:`fit``.
+
+            .. note::
+                If ``X=None``, the log-likelihoods for the last ``X``
+                that :meth:`fit` was called with are returned.
 
         Returns
         -------
         log_likelihood : list
-            List of log-likelihoods
+            List of log-likelihoods, one per element in ``X``.
         """
         if X is None:
             return self.fit_info_['log_likelihoods']
