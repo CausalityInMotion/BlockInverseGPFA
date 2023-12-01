@@ -1,7 +1,9 @@
+# ...
+# Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
+# license Modified BSD, see LICENSE.txt for details.
+# ...
 """
-Preprocessing Unittests.
-:copyright: Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
-:license: Modified BSD, see LICENSE.txt for details.
+Preprocessing Unittests
 """
 
 import unittest
@@ -35,7 +37,7 @@ class TestProprocessing(unittest.TestCase):
         # =====================================
         # Sample data where `t_stop1 = 0.4 [s]`
         # =====================================
-        # For X1 - X4_at_Tstop1, the input data is the but
+        # For X1 - X4_at_Tstop1, the input data is the same but
         # the data type is different (i.e., list-of-list,
         # list-of-arrays, numpy.ndarray and neo.SpikeTrain,
         # respectively)
@@ -52,7 +54,7 @@ class TestProprocessing(unittest.TestCase):
         # =======================================
         #  Sample data where `t_stop2 = 0.48 [s]`
         # =======================================
-        # For X1 - X4_at_Tstop2, the input data is the but
+        # For X1 - X4_at_Tstop2, the input data is the same but
         # the data type is different (i.e., list-of-list,
         # list-of-arrays, numpy.ndarray and neo.SpikeTrain,
         # respectively)
