@@ -565,18 +565,15 @@ class GPFA(sklearn.base.BaseEstimator):
 
     def _em(self, X):
         """
-        Fits GPFA model parameter attributes using expectation-maximization
-        (EM) algorithm.
-        And also updates ``self.fit_info_``
+        Fits GPFA model parameter attributes by Expectation Maximization (EM).
+        The method also updates ``self.fit_info_`` to store additional
+        fitting information.
 
         Parameters
         ----------
         X   : an array-like, default=None
-            An array-like of observation sequences, one per trial.
-            Each element in `X` is a matrix of size ``x_dim x bins``,
-            containing an observation sequence. The input dimensionality
-            ``x_dim`` needs to be the same across elements in `X`, but ``bins``
-            can be different for each observation sequence.
+            An array-like sequence of time-series. The format is the same as
+            for :meth:`fit``.
 
         Returns
         -------
@@ -711,17 +708,14 @@ class GPFA(sklearn.base.BaseEstimator):
 
     def _infer_latents(self, X, get_ll=True):
         """
-        Extracts latent trajectories from observed data
-        given GPFA model parameters.
+        Inferrs latent trajectories from observed data given GPFA model
+        parameters.
 
         Parameters
         ----------
         X   : an array-like, default=None
-            An array-like of observation sequences, one per trial.
-            Each element in `X` is a matrix of size ``x_dim x bins``,
-            containing an observation sequence. The input dimensionality
-            ``x_dim`` needs to be the same across elements in `X`, but ``bins``
-            can be different for each observation sequence.
+            An array-like sequence of time-series. The format is the same as
+            for :meth:`fit``.
 
         get_ll : bool, optional, default=True
             specifies whether to compute data log likelihood
@@ -859,7 +853,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
     def _learn_gp_params(self, latent_seqs, precomp):
         """
-        Updates parameters of GP state model, given trajectories.
+        Updates parameters of GP kernels, given latent trajectories.
 
         Parameters
         ----------
@@ -891,8 +885,8 @@ class GPFA(sklearn.base.BaseEstimator):
 
     def _orthonormalize(self, seqs):
         """
-        Apply the corresponding linear transform to the latent variables.
-
+        Perform orthonormalization transform of the latent variables.
+        
         Parameters
         ----------
         seqs : numpy.recarray
