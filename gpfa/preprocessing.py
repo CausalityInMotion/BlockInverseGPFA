@@ -21,7 +21,7 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
     This class allows you to bin spike trains represented as time points,
     converting them into matrices that represent event counts within each bin.
     It provides options for specifying the bin size, handling the last bin's
-    inclusion of `t_stop`, and automatically determining `t_stop` if it's not
+    inclusion of ``t_stop``, and automatically determining ``t_stop`` if it's not
     provided.
 
     Parameters
@@ -31,20 +31,20 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
 
     t_stop : float, optional, default : None
         The end time of the trial. If not specified, it is determined based on
-        the provided data. If the data is a `neo.SpikeTrain` object, `t_stop`
-        is set to `X[0].t_stop.magnitude`, assuming a common `t_stop` across
-        all neurons. Otherwise, `t_stop` is determined as the largest spike
-        time across all neurons. To ensure the last bin includes `t_stop`, a
-        small fraction of `bin_size` is added to `t_stop`.
+        the provided data. If the data is a `neo.SpikeTrain` object, ``t_stop``
+        is set to ``X[0].t_stop.magnitude``, assuming a common `t_stop` across
+        all neurons. Otherwise, ``t_stop`` is determined as the largest spike
+        time across all neurons. To ensure the last bin includes ``t_stop``, a
+        small fraction of ``bin_size`` is added to ``t_stop``.
 
     extrapolate_last_bin : boolean, optional, default : False
-        Controls whether the last bin includes `t_stop`. If `False`, the last
-        bin is the one before `t_stop` (or includes `t_stop` if it matches the
-        bin's final edge). Events after the bin's final edge are ignored, and
-        `X_out` contains integer event counts. If `True`, the last bin includes
-        `t_stop`, and event counts are extrapolated to account for the fact
-        that `t_stop` is smaller than the last bin's final edge. In this case,
-        `X_out` contains `float` event counts, which may be non-integer for the
+        Controls whether the last bin includes ``t_stop``. If ``False``, the last
+        bin is the one before ``t_stop`` (or includes ``t_stop`` if it matches the
+        ``bin``'s final edge). Events after the bin's final edge are ignored, and
+        ``X_out`` contains integer event counts. If ``True``, the last ``bin`` includes
+        ``t_stop``, and event counts are extrapolated to account for the fact
+        that ``t_stop`` is smaller than the last ``bin``'s final edge. In this case,
+        ``X_out`` contains `float` event counts, which may be non-integer for the
         final bin.
 
     Examples
@@ -146,15 +146,16 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
         ----------
         X : numpy.array or neo.SpikeTrain
             An array-like of observation sequences from one trial.
-            Each element in `X` can be of different lengths but the
-            trial duration (i.e., ``t_stop``) is the same across all
-            neuron.
+            Each element in :math:`\\boldsymbol{X}_n` can be of
+            different lengths but the trial duration
+            (i.e., ``t_stop``) is the same across all
+            neurons.
 
         Returns
         -------
         X_out : numpy.array
-            A numpy matrix of size #neurons x #bins, containing the
-            final bin counts.
+            A numpy matrix of size ``x_dim`` x ``bins``, containing the
+            final ``bin`` counts.
         """
         # ==============================================
         # set the starting time of the trial (`t_start`)
