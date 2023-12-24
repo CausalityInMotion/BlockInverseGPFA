@@ -149,13 +149,9 @@ References
     In Journal of Neurophysiology, Vol. 102, Issue 1. pp. 614-635.
     <https://doi.org/10.1152/jn.90941.2008>`_
 
-.. [RW2006] `Carl E. Rasmussen and Christopher K.I. Williams,
-   "Gaussian Processes for Machine Learning",
-   MIT Press 2006 <https://www.gaussianprocess.org/gpml/chapters/RW.pdf>`_
-
-.. _main_page:
 .. toctree::
     :maxdepth: 2
+    :hidden:
 
     gpfa_class
     preprocessing_class
