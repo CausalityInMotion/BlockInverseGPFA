@@ -529,7 +529,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         Notes
         -----
-        This function calculates the coefficient of determination (R^2) to
+        This function calculates the coefficient of determination (:math:`R^2`) to
         measure how well the latent trajectories explain the variance in the
         observed data. It follows these steps:
 
