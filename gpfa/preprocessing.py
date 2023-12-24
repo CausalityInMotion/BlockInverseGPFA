@@ -152,10 +152,9 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
             A numpy matrix of size #sequences x #bins, containing the
             binned event counts.
         """
-        # ==============================================
-        # set the starting time of the trial (`t_start`)
-        # and the end time (`t_stop`)
-        # ==============================================
+        # ==========================================================================
+        # set the starting time of the trial (`t_start`) and the end time (`t_stop`)
+        # ==========================================================================
         t_start = 0
         if self.t_stop is None:
             if hasattr(X[0], 't_stop'):
