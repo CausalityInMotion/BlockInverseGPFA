@@ -160,7 +160,10 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
             if hasattr(X[0], 't_stop'):
                 self.t_stop = X[0].t_stop.magnitude
             else:
-                self.t_stop = max(map(lambda x: x[-1], X))
+                self.t_stop = max(
+                    map(lambda x: x[-1] if (isinstance(x, np.ndarray) and np.any(x)) or \
+                         (isinstance(x, list) and any(x)) else 0, X)
+                    )
 
         # ====================================
         # get the bins based on the `bin_size`
