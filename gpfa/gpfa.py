@@ -508,7 +508,7 @@ class GPFA(sklearn.base.BaseEstimator):
         _, lls = self._infer_latents(X, get_ll=True)
         return lls
 
-    def variance_explained(self):
+    def variance_explained(self, X=None):
         """
         Computes the total explained variance regression score using
         :math:`R^2` (coefficient of determination) for the overall `X`.
@@ -544,8 +544,12 @@ class GPFA(sklearn.base.BaseEstimator):
                store it in `latent_R2s`.
 
         """
-        seqs, _ = self.predict(returned_data=['X', 'pZ_mu_orth'])
-        X, pZ_mu_orth = seqs['X'], seqs['pZ_mu_orth']
+        if X is None:
+            seqs, _ = self.predict(returned_data=['X', 'pZ_mu_orth'])
+            X, pZ_mu_orth = seqs['X'], seqs['pZ_mu_orth']
+        else:
+            seqs, _ = self.predict(X=X, returned_data=['pZ_mu_orth'])
+            pZ_mu_orth = seqs
 
         Corth = self.Corth_
         x_mean = self.d_[:, np.newaxis]
