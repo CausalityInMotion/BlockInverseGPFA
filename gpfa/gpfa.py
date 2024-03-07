@@ -186,9 +186,64 @@ class GPFA(sklearn.base.BaseEstimator):
     the probabilistic model underlying GPFA. Parameter fitting is performed by
     the Expectation Maximization method. See :meth:`fit` for details.
 
+
     Examples
     --------
-        Refer to :ref:`examples <examples>` for usage example.
+    >>> import numpy as np
+    >>> from gpfa import GPFA
+    >>> 
+    >>> X = np.array([[
+    ...     [3, 1, 0, 4, 1, 2, 1, 3, 4, 2, 2, 1, 2, 0, 0, 2, 2, 5, 1, 3],
+    ...     [1, 0, 2, 0, 2, 1, 4, 2, 0, 1, 4, 4, 1, 2, 8, 3, 2, 1, 3, 1],
+    ...     [2, 2, 1, 1, 3, 2, 3, 2, 2, 0, 3, 4, 1, 2, 3, 1, 4, 1, 0, 1]
+    ... ]])
+    >>> 
+    >>> z_dim = 1
+    >>> gpfa_model = GPFA(z_dim=z_dim)
+    >>> 
+    >>> # Fit the model
+    >>> gpfa_model.fit(X)
+    Initializing parameters using factor analysis...
+    Fitting GPFA model...
+    >>> 
+    >>> # Infere latent variable time-courses for the same data
+    >>> infered_latent_variable, _ = gpfa_model.predict()
+    >>> 
+    >>> print('Infered Latent:')
+    >>> print(infered_latent_variable)
+    Infered Latent:
+    [array([[-1.18405633, -2.00878   , -0.01470251, -2.3143544 ,  0.03651376,
+             -1.06948736,  2.05355342, -0.16920794, -2.26437342, -1.21934552,
+              1.98656088,  2.13305066, -1.14113106,  0.11319858,  6.14998095,
+              0.89241818,  0.03509708, -1.3936327 ,  0.84781358, -1.2281484 ]])]
+    >>> 
+    >>> # Display the loading matrix and observation mean parameter
+    >>> print('Loading Matrix (C_):')
+    >>> print(gpfa_model.C_)
+    Loading Matrix (C_):
+    [[-0.78376501]
+    [ 1.77773876]
+    [ 0.51134474]]
+    >>> 
+    >>> print('Observation Mean (d_):')
+    >>> print(gpfa_model.d_)
+    Observation Mean (d_):
+    [1.95470037 2.08933859 1.89693338]
+    >>> 
+    >>> # Obtaining log-likelihood scores
+    >>> log_likelihoods = gpfa_model.score()
+    >>> print('Log Likelihoods:')
+    >>> print(log_likelihoods)
+    Log Likelihoods:
+    [-117.54588379661148, -107.17193271370158, ..., -100.13200154180569]
+    >>> 
+    >>> # Evaluate the total explained variance regression score
+    >>> explained_variance = gpfa_model.variance_explained()
+    >>> print('Explained Variance')
+    >>> print(explained_variance)
+    Explained Variance
+    (0.6581475357501596, array([0.65814754]))
+
 
     Methods
     -------
