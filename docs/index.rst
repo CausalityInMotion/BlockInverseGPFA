@@ -35,14 +35,6 @@ Overall, the model has emission model parameters :math:`\boldsymbol{C}`, :math:`
 
 Notes
 =====
-.. These are some of the things worthy of note, but I think they are better
-.. fitted in the GPFA class documentation (we can discuss this).
-.. - Differences between the original implementation and the current one:
-  
-..   - Using :func:`use_cut_trials`, pros and cons
-..   - block inverse computation
-..   - GP Kernel
-..   - Variance explained
 
 GPFA differs from the popular `PCA <https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html>`_ in two significant ways:
 
@@ -52,89 +44,66 @@ GPFA differs from the popular `PCA <https://scikit-learn.org/stable/modules/gene
 
 .. _examples:
 
-Examples (TODO)
-===============
-.. Discuss appropriate examples
+Examples
+========
 
 >>> import numpy as np
 >>> from gpfa import GPFA
->>> from sklearn.gaussian_process.kernels import RBF, WhiteKernel
->>> from sklearn.gaussian_process.kernels import ConstantKernel
-
->>> # set random parameters
->>> seed = [0, 8, 10]
->>> z_dim = 3
->>> units = 10
+>>> from sklearn.gaussian_process import GaussianProcessRegressor
+>>> from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
+>>> 
+>>> # Set random parameters
+>>> seed = [0, 42]
+>>> z_dim = 2
+>>> units = 5
 >>> tau_f = 0.1
 >>> sigma_n = 0.001
 >>> sigma_f = 1 - sigma_n
 >>> bin_size = 0.02  # [s]
->>> num_trials = 3
->>> n_timesteps = 500
->>> kernel = ConstantKernel(
-...                    sigma_f, constant_value_bounds='fixed'
-...                    ) * RBF(length_scale=tau_f) + ConstantKernel(
-...                    sigma_n, constant_value_bounds='fixed'
-...                    ) * WhiteKernel(
-...                        noise_level=1, noise_level_bounds='fixed'
-...                    )
+>>> num_events = 2
+>>> n_timesteps = 200
+>>> kernel = ConstantKernel(sigma_f, constant_value_bounds='fixed') * RBF(length_scale=tau_f) + ConstantKernel(sigma_n, constant_value_bounds='fixed') * WhiteKernel(noise_level=1, noise_level_bounds='fixed')
+>>> 
 >>> tsdt = np.arange(0, n_timesteps) * bin_size
 >>> mu = np.zeros(tsdt.shape)
 >>> cov = kernel(tsdt[:, np.newaxis])
+>>> 
 >>> C = np.random.uniform(0, 2, (units, z_dim))     # loading matrix
->>> obs_noise = np.random.uniform(0.2, 0.75, units) # rand noise parameters
+>>> obs_noise = np.random.uniform(0.2, 0.75, units)  # random noise parameters
 >>> X = []
->>> for n in range(num_trials):
->>>     np.random.seed(seed[n])
->>>     # Draw three latent state samples from a Gaussian process
->>>     # using the above cov
->>>     Z = np.random.multivariate_normal(mu.ravel(), cov, z_dim)
->>>     # observations have Gaussian noise
->>>     x = C @ Z + np.random.normal(0, obs_noise, (n_timesteps, units)).T
->>>     X.append(x)
+>>> Z = []
+>>> for n in range(num_events):
+...     np.random.seed(seed[n])
+... 
+...     # Create a GaussianProcessRegressor
+...     gp_model = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10, random_state=seed[n])
+... 
+...     # Sample from the Gaussian process
+...     Z_samples = gp_model.sample_y(tsdt[:, np.newaxis], n_samples=z_dim)
+...     Z_samples = Z_samples.T
+...     Z.append(Z_samples)
+... 
+...     # Observations with Gaussian noise
+...     x = C @ Z_samples + np.random.normal(0, obs_noise, (n_timesteps, units)).T
+...     X.append(x)
+... 
 >>> gpfa = GPFA(bin_size=bin_size, z_dim=z_dim)
+>>> 
 >>> gpfa.fit(X)
-Initializing parameters using factor analysis...
-Fitting GPFA model...
->>> results, _ = gpfa.predict(returned_data=['pZ_mu', 'pZ_mu_orth'])
->>> pZ_mu_orth = results['pZ_mu_orth']
->>> pZ_mu = results['pZ_mu']
->>> gpfa.variance_explained()
-(0.93590..., array([0.76541..., 0.10446..., 0.066033...]))
+>>> 
+>>> results = gpfa.predict(returned_data=['pZ_mu_orth', 'pZ_mu'])
+>>> pZ_mu_orth = results[0]['pZ_mu_orth']
+>>> pZ_mu = results[0]['pZ_mu']
+>>> 
+>>> print(gpfa.variance_explained())
+(0.9546000971825614, array([0.93062395, 0.02397615]))
 
->>> # GPFA on synthetic spike data
->>> import numpy as np
->>> from gpfa import GPFA
->>> from gpfa.preprocessing import EventTimesToCounts
->>> from sklearn.preprocessing import FunctionTransformer
->>> seed = [0, 8, 10, 42, 60]
->>> rate = 50
->>> units = 10
->>> durations = [500, 550, 600, 650, 700]  # [ms]
->>> num_trials = len(durations)
->>> X = np.zeros(num_trials, object)
->>> for i in range(num_trials):
->>>     np.random.seed(seed[i])
->>>     Data[i] = np.random.poisson(rate, (units, durations[i]))
->>> event_times_to_counts = EventTimesToCounts(extrapolate_last_bin=True)
->>> binned_spiketrians = [
-...    event_times_to_counts.transform(x_i) for x_i in X
-...    ]
->>> fun_trans = FunctionTransformer(np.sqrt)
->>> sqrt_spike_trains = [
-...    fun_trans.transform(x_i) for x_i in binned_spiketrians
-...    ]
->>> z_dim = 3
->>> bin_size = 0.02  # [s]
->>> gpfa = GPFA(bin_size=bin_size, z_dim=z_dim, em_max_iters=2)
->>> gpfa.fit(X)
-Initializing parameters using factor analysis...
-Fitting GPFA model...
->>> results, _ = gpfa.predict(returned_data=['pZ_mu','pZ_mu_orth'])
->>> pZ_mu_orth = results['pZ_mu_orth']
->>> pZ_mu = results['pZ_mu']
->>> gpfa.variance_explained()
-(0.98518..., array([9.85162126e-01, 1.32456401e-05, 7.66699002e-06]))
+.. image:: ../images/example-2.png
+   :width: 600
+   :height: 600
+   :alt: Results Image
+   :align: center
+
 
 Original code
 -------------
