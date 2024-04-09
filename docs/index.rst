@@ -61,53 +61,116 @@ This example illustrates the application of GPFA to data analysis by encompassin
    from sklearn.gaussian_process import GaussianProcessRegressor
    from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
 
-   # Set random parameters
-   seed = [0, 42]
+   # Simulation parameters
+   rng_seeds = [0, 42]
    z_dim = 2
-   units = 5
-   tau_f = 0.1
+   x_dim = 10
+   tau_f = 1
    sigma_n = 0.001
    sigma_f = 1 - sigma_n
    bin_size = 0.02  # [s]
-   num_events = 2
-   n_timesteps = 200
+   num_obs = len(rng_seeds)
+   T_per_obs = 400
    kernel = ConstantKernel(sigma_f, constant_value_bounds='fixed') * RBF(length_scale=tau_f) + \
-            ConstantKernel(sigma_n, constant_value_bounds='fixed') * WhiteKernel(noise_level=1, noise_level_bounds='fixed')
+         ConstantKernel(sigma_n, constant_value_bounds='fixed') * WhiteKernel(noise_level=1, noise_level_bounds='fixed')
 
-   tsdt = np.arange(0, n_timesteps) * bin_size
-   mu = np.zeros(tsdt.shape)
-   cov = kernel(tsdt[:, np.newaxis])
+   tsdt = np.arange(0, T_per_obs) * bin_size
 
-   C = np.random.uniform(0, 2, (units, z_dim))     # loading matrix
-   obs_noise = np.random.uniform(0.2, 0.75, units)  # random noise parameters
+   np.random.seed(100)
+   C = np.random.uniform(0, 2, (x_dim, z_dim))     # loading matrix
+   sqrtR = np.random.uniform(0, 0.5, x_dim)
+
+   # Generate latent and observation sequences in line with GPFA model
    X = []
    Z = []
-   for n in range(num_events):
-      np.random.seed(seed[n])
+   for n in range(num_obs):
+      np.random.seed(rng_seeds[n])
 
-      # Create a GaussianProcessRegressor
-      gp_model = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10, random_state=seed[n])
-
-      # Sample from the Gaussian process
-      Z_samples = gp_model.sample_y(tsdt[:, np.newaxis], n_samples=z_dim)
-      Z_samples = Z_samples.T
-      Z.append(Z_samples)
-
-      # Observations with Gaussian noise
-      x = C @ Z_samples + np.random.normal(0, obs_noise, (n_timesteps, units)).T
+      # Sample latent sequence according to GPFA latent time-course model
+      gp_model = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10, random_state=rng_seeds[n])
+      
+      z = gp_model.sample_y(tsdt[:, np.newaxis], n_samples=z_dim).T
+      Z.append(z)
+      # Sample observations according to GPFA emission model
+      x = C @ z + np.random.normal(0, sqrtR, (T_per_obs, x_dim)).T
       X.append(x)
 
+   # Fit GPFA to simulated observations
    gpfa = GPFA(bin_size=bin_size, z_dim=z_dim)
 
    gpfa.fit(X)
 
    results = gpfa.predict(returned_data=['pZ_mu_orth', 'pZ_mu'])
-   pZ_mu_orth = results[0]['pZ_mu_orth']
-   pZ_mu = results[0]['pZ_mu']
 
    print(gpfa.variance_explained())
+   >>> (0.9622165790022441, array([0.73577503, 0.22644155]))
 
-   (0.9546000971825614, array([0.93062395, 0.02397615]))
+Visualize the obtained latent trajectories against the true latents
+
+.. code-block:: python
+
+   import matplotlib.pyplot as plt
+
+   true_Z = Z
+
+   # Extract Z_orth and pZ_mu from results
+   Z_orth = results[0]['pZ_mu_orth']
+   pZ_mu = results[0]['pZ_mu']
+
+   plt.figure(figsize=(13, 13))
+
+   # Choose the latent dimension to compare
+   latent_from_first_obs = 0
+   latent_from_second_obs = 1
+
+   # total time steps
+   total_time_steps = len(Z_orth[latent_from_first_obs][0, :])
+
+   # total time span in seconds
+   total_time_span = total_time_steps * 0.01
+
+   # number of seconds for x-ticks
+   num_seconds = int(total_time_span)
+
+   # Plot for the 1st latent dimension
+   plt.subplot(2, 1, 1)
+
+   # Plot true Z
+   plt.plot(true_Z[latent_from_first_obs][0, :], label='True Z', color='blue', linewidth=5)
+
+   # Plot inferred pZ_mu
+   plt.plot(pZ_mu[latent_from_first_obs][0, :], label='Inferred Z', color='red', linewidth=5)
+
+   # Plot inferred Z_orth
+   plt.plot(Z_orth[latent_from_first_obs][0, :], label='Inferred Z_orth', color='green', linewidth=5)
+
+   plt.ylabel('Latent Dimension 1', fontsize=20)
+   plt.title(f'Comparison of Latent Dimension 1 from 1st Observations', fontsize=20)
+   plt.xticks(np.linspace(0, total_time_steps-1, num_seconds+1), np.arange(0, num_seconds+1), fontsize=20)
+   plt.yticks(fontsize=20)
+   plt.legend(fontsize=25)
+
+   # Plot for the 2nd latent dimension
+   plt.subplot(2, 1, 2)
+
+   # Plot true Z
+   plt.plot(true_Z[latent_from_second_obs][0, :], label='True Z', color='blue', linewidth=5)
+
+   # Plot inferred pZ_mu
+   plt.plot(pZ_mu[latent_from_second_obs][0, :], label='Inferred Z', color='red', linewidth=5)
+
+   # Plot inferred Z_orth
+   plt.plot(Z_orth[latent_from_second_obs][0, :], label='Inferred Z_orth', color='green', linewidth=5)
+
+   plt.xlabel('Time Steps in Seconds', fontsize=25)
+   plt.ylabel('Latent Dimension 2', fontsize=20)
+   plt.title(f'Comparison of Latent Dimension 1 from 2nd Observations', fontsize=20)
+   plt.xticks(np.linspace(0, total_time_steps-1, num_seconds+1), np.arange(0, num_seconds+1), fontsize=20)
+   plt.yticks(fontsize=20)
+
+   plt.tight_layout()
+   plt.show()
+
 
 .. image:: ../examples/example-2.png
    :width: 600
