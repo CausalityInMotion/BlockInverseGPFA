@@ -81,7 +81,7 @@ class GPFA(sklearn.base.BaseEstimator):
         where ML parameter learning returns one or more zero private variances
         (see Martin & McDonald, Psychometrika, Dec 1975).
 
-    em_tol : float, optional, default=1e-8
+    em_tol : float, optional, default=1e-5
         Stopping criterion for Expectation Maximization (EM) algorithm.
 
     em_max_iters : int, optional, default=500
@@ -245,7 +245,7 @@ class GPFA(sklearn.base.BaseEstimator):
     """
 
     def __init__(self, bin_size=0.02, gp_kernel=None, z_dim=3,
-                 min_var_frac=0.01, em_tol=1.0E-8, em_max_iters=500,
+                 min_var_frac=0.01, em_tol=1.0E-5, em_max_iters=500,
                  freq_ll=5, verbose=False):
         self.bin_size = bin_size
         self.z_dim = z_dim
