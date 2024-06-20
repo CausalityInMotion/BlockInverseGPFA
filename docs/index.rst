@@ -65,18 +65,18 @@ This example illustrates the application of GPFA to data analysis by encompassin
    rng_seeds = [0, 42]
    z_dim = 2
    x_dim = 10
-   tau_f = 1
+   tau_f = 0.6
    sigma_n = 0.001
    sigma_f = 1 - sigma_n
-   bin_size = 0.02  # [s]
+   bin_size = 0.05  # [s]
    num_obs = len(rng_seeds)
-   T_per_obs = 400
+   T_per_obs = 400 
    kernel = ConstantKernel(sigma_f, constant_value_bounds='fixed') * RBF(length_scale=tau_f) + \
          ConstantKernel(sigma_n, constant_value_bounds='fixed') * WhiteKernel(noise_level=1, noise_level_bounds='fixed')
 
    tsdt = np.arange(0, T_per_obs) * bin_size
 
-   np.random.seed(100)
+   np.random.seed(2)
    C = np.random.uniform(0, 2, (x_dim, z_dim))     # loading matrix
    sqrtR = np.random.uniform(0, 0.5, x_dim)
 
@@ -87,23 +87,23 @@ This example illustrates the application of GPFA to data analysis by encompassin
       np.random.seed(rng_seeds[n])
 
       # Sample latent sequence according to GPFA latent time-course model
-      gp_model = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10, random_state=rng_seeds[n])
+      gp_model = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=20)
       
-      z = gp_model.sample_y(tsdt[:, np.newaxis], n_samples=z_dim).T
+      z = gp_model.sample_y(tsdt[:, np.newaxis], n_samples=z_dim, random_state=rng_seeds[n]).T
       Z.append(z)
       # Sample observations according to GPFA emission model
       x = C @ z + np.random.normal(0, sqrtR, (T_per_obs, x_dim)).T
       X.append(x)
 
    # Fit GPFA to simulated observations
-   gpfa = GPFA(bin_size=bin_size, z_dim=z_dim)
+   gpfa = GPFA(bin_size=bin_size, z_dim=z_dim, em_tol=1e-4,)
 
    gpfa.fit(X)
 
    results = gpfa.predict(returned_data=['pZ_mu_orth', 'pZ_mu'])
 
    print(gpfa.variance_explained())
-   >>> (0.9622165790022441, array([0.73577503, 0.22644155]))
+   >>> (0.9830394844469381, array([0.798201  , 0.18483849]))
 
 Visualize the obtained latent trajectories against the true latents
 
@@ -117,8 +117,6 @@ Visualize the obtained latent trajectories against the true latents
    Z_orth = results[0]['pZ_mu_orth']
    pZ_mu = results[0]['pZ_mu']
 
-   plt.figure(figsize=(13, 13))
-
    # Choose the latent dimension to compare
    latent_from_first_obs = 0
    latent_from_second_obs = 1
@@ -127,26 +125,31 @@ Visualize the obtained latent trajectories against the true latents
    total_time_steps = len(Z_orth[latent_from_first_obs][0, :])
 
    # total time span in seconds
-   total_time_span = total_time_steps * 0.01
+   total_time_span = total_time_steps * bin_size
 
    # number of seconds for x-ticks
    num_seconds = int(total_time_span)
+
+   # Time array for the x-axis
+   time_array = np.arange(0, total_time_span, bin_size)
+
+   plt.figure(figsize=(13, 13))
 
    # Plot for the 1st latent dimension
    plt.subplot(2, 1, 1)
 
    # Plot true Z
-   plt.plot(true_Z[latent_from_first_obs][0, :], label='True Z', color='blue', linewidth=5)
+   plt.plot(time_array, true_Z[latent_from_first_obs][0, :], label='True Z', linestyle='--', marker='o', color='blue', linewidth=3)
 
    # Plot inferred pZ_mu
-   plt.plot(pZ_mu[latent_from_first_obs][0, :], label='Inferred Z', color='red', linewidth=5)
+   plt.plot(time_array, pZ_mu[latent_from_first_obs][0, :], label='Inferred Z', linestyle='--', marker='s', color='red', linewidth=3)
 
    # Plot inferred Z_orth
-   plt.plot(Z_orth[latent_from_first_obs][0, :], label='Inferred Z_orth', color='green', linewidth=5)
+   plt.plot(time_array, Z_orth[latent_from_first_obs][0, :], label='Inferred Z_orth', linestyle='--', marker='x', color='green', linewidth=3)
 
    plt.ylabel('Latent Dimension 1', fontsize=20)
    plt.title(f'Comparison of Latent Dimension 1 from 1st Observations', fontsize=20)
-   plt.xticks(np.linspace(0, total_time_steps-1, num_seconds+1), np.arange(0, num_seconds+1), fontsize=20)
+   plt.xticks(np.arange(0, total_time_span + 1, 2), np.arange(0, num_seconds + 1, 2), fontsize=20)
    plt.yticks(fontsize=20)
    plt.legend(fontsize=25)
 
@@ -154,18 +157,18 @@ Visualize the obtained latent trajectories against the true latents
    plt.subplot(2, 1, 2)
 
    # Plot true Z
-   plt.plot(true_Z[latent_from_second_obs][0, :], label='True Z', color='blue', linewidth=5)
+   plt.plot(time_array, true_Z[latent_from_second_obs][0, :], label='True Z', linestyle='--', marker='o', color='blue', linewidth=3)
 
    # Plot inferred pZ_mu
-   plt.plot(pZ_mu[latent_from_second_obs][0, :], label='Inferred Z', color='red', linewidth=5)
+   plt.plot(time_array, pZ_mu[latent_from_second_obs][0, :], label='Inferred Z', linestyle='--', marker='s', color='red', linewidth=3)
 
    # Plot inferred Z_orth
-   plt.plot(Z_orth[latent_from_second_obs][0, :], label='Inferred Z_orth', color='green', linewidth=5)
+   plt.plot(time_array, Z_orth[latent_from_second_obs][0, :], label='Inferred Z_orth', linestyle='--', marker='x', color='green', linewidth=3)
 
-   plt.xlabel('Time Steps in Seconds', fontsize=25)
-   plt.ylabel('Latent Dimension 2', fontsize=20)
+   plt.xlabel('Time in Seconds', fontsize=25)
+   plt.ylabel('Latent Dimension 1', fontsize=20)
    plt.title(f'Comparison of Latent Dimension 1 from 2nd Observations', fontsize=20)
-   plt.xticks(np.linspace(0, total_time_steps-1, num_seconds+1), np.arange(0, num_seconds+1), fontsize=20)
+   plt.xticks(np.arange(0, total_time_span + 1, 2), np.arange(0, num_seconds + 1, 2), fontsize=20)
    plt.yticks(fontsize=20)
 
    plt.tight_layout()
