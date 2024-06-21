@@ -103,7 +103,10 @@ This example illustrates the application of GPFA to data analysis by encompassin
    results = gpfa.predict(returned_data=['pZ_mu_orth', 'pZ_mu'])
 
    print(gpfa.variance_explained())
-   >>> (0.9830394844469381, array([0.798201  , 0.18483849]))
+
+.. code-block:: console
+
+   (0.9830394844469381, array([0.798201  , 0.18483849]))
 
 Visualize the obtained latent trajectories against the true latents
 
@@ -189,9 +192,9 @@ In the next example, we apply GPFA to real neural data obtained from DANDI archi
 
 - The task was a center-out-and-back reaching task with 48 targets arranged in three concentric rings of 4, 8, and 12 cm radius, each with 16 targets.
 - The monkey had to reach to a target that was randomly selected and presented on a screen, hold for 500 ms, and then return to the center.
-- The delay period between the target onset and the go cue was uniformly distributed from 300 to 700 ms. In this example below we used 500 ms for delay period.
+- The delay period between the target onset and the go cue was uniformly distributed from 300 to 700 ms. In this example below, we used 500 ms for delay period.
 - The neural activity in the dorsal premotor cortex (PMd) and primary motor cortex (M1) was recorded using a 96-electrode array.
-- The data from four sessions (7722 trials) were combined for analysis in, with only two sessions utilized for the current example.
+- The data from four sessions (7722 trials) were combined for analysis, with only two sessions utilized for the current example.
 
 .. note::
    
@@ -280,7 +283,9 @@ Now, let's preprocess the spike data from two NWB files using the following code
 
    # let's look at the total number of trials
    trial_df.shape
-
+   
+.. code-block:: console
+   
    (4336, 11)
 
 Now, let's organize the spike train data from the trial DataFrame. This involves calculating the number of unique reach angles, the number of trials per reach angle, and the total number of neurons. We'll initialize an empty array to store spike trains for each reach and trial, and then populate this array by iterating through the trial DataFrame. The following code accomplishes this:
@@ -305,6 +310,8 @@ Now, let's organize the spike train data from the trial DataFrame. This involves
    print(f'Number of trials per reaching angle: {n_trials_per_reach}')
    print(f'Number of neurons: {n_neurons}')
 
+.. code-block:: console
+
    Number of reaching angles: 16
    Number of trials per reaching angle: 271
    Number of neurons: 192
@@ -313,6 +320,9 @@ Now, let's organize the spike train data from the trial DataFrame. This involves
 Next, we'll further preprocess the training data for spike train analysis. Here, we set the number of trials for training (`n_train_trials`) and calculate the remaining trials for testing. We set the bin size for spike train analysis as 0.05 throughout this example.
 
 .. code-block:: python
+
+   from gpfa.preprocessing import EventTimesToCounts
+   from sklearn.preprocessing import FunctionTransformer
 
    n_train_trials = 217  # Number of trials for training (~80 % of total trials)
    n_test_trials = n_trials_per_reach - n_train_trials  # Remaining trials for testing
@@ -340,6 +350,8 @@ Next, we'll further preprocess the training data for spike train analysis. Here,
 
    print(f'Number of active neurons: {active_neurons}')
 
+.. code-block:: console
+
    Number of active neurons: 192
 
 .. code-block:: python
@@ -350,6 +362,8 @@ Next, we'll further preprocess the training data for spike train analysis. Here,
 
    print(f'Rank of training data: {rank}')
 
+.. code-block:: console
+
    Rank of training data: 192
 
 Great! Now that we have preprocessed the spike train data, we can proceed to initialize and fit the GPFA model. We will initialize it to 48 latents because the data has 3 rings with 16 targets each.
@@ -357,7 +371,6 @@ Great! Now that we have preprocessed the spike train data, we can proceed to ini
 .. code-block:: python
 
    from gpfa import GPFA
-   import pickle
 
    # Initialize GPFA
    n_latents = 48  # number of latent states
@@ -366,17 +379,21 @@ Great! Now that we have preprocessed the spike train data, we can proceed to ini
    # Fit GPFA
    gpfa.fit(non_zero_spiketrains, use_cut_trials=True)
 
+.. code-block:: console
+
    Initializing parameters using factor analysis...
 
    Fitting GPFA model...
 
-Once the training is complete (and without splitting the data into training and test sets), you can assess the model performance by examining variance explained.
+Once the training is complete, you can assess the model performance by examining variance explained.
 
 .. code-block:: python
 
    # Assess the variance explained on the training data set
    variance_explained_train = gpfa.variance_explained()
    print(f"Variance Explained on Training Set: \n{variance_explained_train}")
+
+.. code-block:: console
 
    Variance Explained on Training Set:
    (0.3970230153314942,
@@ -428,6 +445,8 @@ Next, we'll assess the variance explained on the test set.
    variance_explained_test = gpfa.variance_explained()
    print(f"Variance Explained on Test Set: \n{variance_explained_test}")
 
+.. code-block:: console
+
    Variance Explained on Test Set:
    (0.4032239611036961,
    array([0.1779022 , 0.056605  , 0.02302932, 0.017137  , 0.01474933,
@@ -443,10 +462,83 @@ Next, we'll assess the variance explained on the test set.
          
 Visualize the orthogonal latent trajectories on the test data set. Here we are plotting the mean trajectory for each reach direction. The blue dots are the average movement onset reach direction.
 
-.. image:: ../examples/gpfa48_latents.png
-   :width: 600
-   :height: 600
-   :alt: Results Image
+.. code-block:: python
+
+   import itertools
+   from matplotlib.animation import FuncAnimation
+   import matplotlib.pyplot as plt
+   from IPython.display import HTML
+
+
+   movement_onset = 0.5 # s after data starts
+   movement_offset = .1 # s before data ends
+   def plot_reach_trajectories(
+         trajectories, animate=False, elev_amount=30, view_angle=25.5,
+         n_reaches=n_reaches, n_test_trials=n_test_trials, movement_onset=movement_onset, bin_size=bin_size):
+      
+      reaches = [0.0, 22.5, 45.0, 67.5, 90.0, 112.5, 135.0, 157.5, 180.0, 202.5, 225.0, 247.5, 270.0, 292.5, 315.0, 337.5]
+      
+      # Get mean latent trajectories for each reach direction
+      min_time_bins = np.min(
+         [trajectories.reshape((-1,))[i_trial].shape[1] for i_trial in range(n_reaches*n_test_trials)]
+         )
+
+      mean_trajectories = np.zeros((n_reaches, 3, min_time_bins))
+      for i_reach in range(n_reaches):
+         for i_trial in range(0, n_test_trials - 1):
+            mean_trajectories[i_reach] +=  trajectories[i_reach, i_trial][:3, :min_time_bins]
+      mean_trajectories /= n_test_trials
+
+      onset_bin = int(movement_onset/bin_size)
+
+      fig = plt.figure(figsize=(12, 10))
+      ax = fig.add_subplot(1, 1, 1, projection='3d')
+      c_vec = itertools.cycle(plt.rcParams['axes.prop_cycle'].by_key()['color'])
+      lines = {}
+      # indiv_trial = {}
+      onset_points = {}
+
+      for i_reach in range(n_reaches):
+         color = next(c_vec)
+
+         lines[i_reach], = ax.plot([], [], [], linewidth=2, color=color, alpha=.8, label=f'{reaches[i_reach]} degrees reach')
+         onset_points[i_reach], = ax.plot([], [], [], 'ob')
+         ax.set(xlim=[-8.1, -0.8], ylim=[-4.1, 2.1], zlim=[-5.1, 0.1],
+               xlabel='Latent dim 1', ylabel='Latent dim 2', zlabel='Latent dim 3')
+      plt.legend()
+      def drawframe(n):
+         n = min(n, min_time_bins)
+         for i_reach in range(n_reaches):
+
+            lines[i_reach].set_data(mean_trajectories[i_reach][0, :n],
+                           mean_trajectories[i_reach][1, :n])
+            lines[i_reach].set_3d_properties(mean_trajectories[i_reach][2, :n])
+            if n >= onset_bin:
+               onset_points[i_reach].set_data([mean_trajectories[i_reach][0, onset_bin]],
+                  [mean_trajectories[i_reach][1, onset_bin]])
+               onset_points[i_reach].set_3d_properties([mean_trajectories[i_reach][2, onset_bin]])
+
+         return lines[0],
+
+      ax.view_init(elev=elev_amount, azim=view_angle)
+
+      if animate:
+         anim = FuncAnimation(fig, drawframe, frames=50, interval=100, blit=True)
+         anim.save('reach_trajectories_48.gif', writer='pillow')
+         plt.close()
+         return HTML(anim.to_jshtml())
+
+      else:
+         drawframe(50)
+
+   plot_reach_trajectories(latent_trajectories_orth_test, animate=True, n_test_trials=n_test_trials)
+
+Click on the animation to zoom in.
+
+.. figure:: /_static/reach_trajectories_48.gif
+   :alt: Reach trajectories animation
+   :width: 1200px
+   :height: 600px
    :align: center
 
 Great! Next, we will demonstrate how to utilize GPFA with multiple parameters.
@@ -464,6 +556,8 @@ In this example, we are using a composite kernel for the Gaussian Process, incor
 
    # Fit GPFA with the specified kernel
    gpfa_with_multi_params_kernel.fit(non_zero_spiketrains, use_cut_trials=True)
+
+.. code-block:: console
 
    Initializing parameters using factor analysis...
 
@@ -487,6 +581,8 @@ Let's assess the varince explained.
    variance_explained_test = gpfa_with_multi_params_kernel.variance_explained()
    print(f"Variance Explained on Test Set: \n{variance_explained_test}")
 
+.. code-block:: console
+
    Variance Explained on Test Set:
    (0.39598750814685524,
    array([0.17805107, 0.05657487, 0.02298279, 0.01688505, 0.01460986,
@@ -502,10 +598,10 @@ Let's assess the varince explained.
 
 And as with the previous example, we can visualize the latent trajectories.
 
-.. image:: ../examples/gpfa_mult_params.png
-   :width: 600
-   :height: 600
-   :alt: Results Image
+.. figure:: /_static/reach_trajectories_48_mult_params.gif
+   :alt: Reach trajectories animation
+   :width: 1200px
+   :height: 600px
    :align: center
 
 Next, we will illustrate the utilization of GPFA with a sequence of kernels, offering users the flexibility to initialize each latent variabes with distinct parameters. For the purposes of this demonstration, we will focus on employing three distinct kernels and corresponding latent dimensions.
@@ -543,6 +639,8 @@ Next, we will illustrate the utilization of GPFA with a sequence of kernels, off
       )
    gpfa_with_seq_kernel.fit(non_zero_spiketrains, use_cut_trials=True)
 
+.. code-block:: console
+
    Initializing parameters using factor analysis...
 
    Fitting GPFA model...
@@ -552,6 +650,8 @@ Next, we will illustrate the utilization of GPFA with a sequence of kernels, off
    # Assess the variance explained on the test data set
    variance_explained_test = gpfa_with_seq_kernel.variance_explained()
    print(f"Variance Explained on Test Set: \n{variance_explained_test}")
+
+.. code-block:: console
 
    (0.2506544239196746, array([0.17618384, 0.05458081, 0.01988977]))
 
