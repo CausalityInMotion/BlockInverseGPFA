@@ -87,20 +87,18 @@ This example illustrates the application of GPFA to data analysis by encompassin
       np.random.seed(rng_seeds[n])
 
       # Sample latent sequence according to GPFA latent time-course model
-      gp_model = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=20)
+      gp_model = GaussianProcessRegressor(kernel=kernel)
       
       z = gp_model.sample_y(tsdt[:, np.newaxis], n_samples=z_dim, random_state=rng_seeds[n]).T
       Z.append(z)
       # Sample observations according to GPFA emission model
-      x = C @ z + np.random.normal(0, sqrtR, (T_per_obs, x_dim)).T
+      x = C @ z + np.random.normal(0, sqrtR[:, np.newaxis] , (x_dim, T_per_obs))
       X.append(x)
 
-   # Fit GPFA to simulated observations
-   gpfa = GPFA(bin_size=bin_size, z_dim=z_dim, em_tol=1e-4,)
+   gpfa = GPFA(bin_size=bin_size, z_dim=z_dim, em_tol=1e-4)
+   gpfa.fit(X)  # this will take a while
 
-   gpfa.fit(X)
-
-   results = gpfa.predict(returned_data=['pZ_mu_orth', 'pZ_mu'])
+   results = gpfa.predict(returned_data=['Z_mu_orth', 'Z_mu'])
 
    print(gpfa.variance_explained())
 
@@ -108,77 +106,47 @@ This example illustrates the application of GPFA to data analysis by encompassin
 
    (0.9830394844469381, array([0.798201  , 0.18483849]))
 
-Visualize the obtained latent trajectories against the true latents
+Note that, due to differences in the linear algebra packages used on different machine architectures and operating systems, the above results might differ across machines.
+
+Let us now visualize the true orthogonalized latents against the inferred orthogonalized latents.
 
 .. code-block:: python
 
+   import matplotlib as mpl
    import matplotlib.pyplot as plt
+   mpl.rcParams.update({'font.size': 20})
+   mpl.rcParams.update({'lines.linewidth': 3})
 
+   # orthogonalize true latents using inferred C
    true_Z = Z
+   true_Z_orth = [gpfa.OrthTrans_ @ Zn for Zn in true_Z]
 
    # Extract Z_orth and pZ_mu from results
    Z_orth = results[0]['pZ_mu_orth']
-   pZ_mu = results[0]['pZ_mu']
+   Z_mu = results[0]['pZ_mu']
 
-   # Choose the latent dimension to compare
-   latent_from_first_obs = 0
-   latent_from_second_obs = 1
+   fig, axs = plt.subplots(2, 1, figsize=(13, 13))
 
-   # total time steps
-   total_time_steps = len(Z_orth[latent_from_first_obs][0, :])
+   # plot first (orthonormalized) latent from first sequence (flipping the sign
+   # of the inferred latent, as this is arbitrary and happens to be wrongly inferred)
+   axs[0].plot(tsdt, true_Z_orth[0][0,:], label='true $Z_{1,:}$ (orth)', c='blue')
+   axs[0].plot(tsdt, -Z_orth[0][0,:], label='inf $Z_{1,:}$ (orth)', c='orange')
+   axs[0].legend()
+   axs[0].set_title('Comparing inferred to true latents')
+   axs[0].set_ylabel('$Z_{1,:}$ from first sequence')
 
-   # total time span in seconds
-   total_time_span = total_time_steps * bin_size
-
-   # number of seconds for x-ticks
-   num_seconds = int(total_time_span)
-
-   # Time array for the x-axis
-   time_array = np.arange(0, total_time_span, bin_size)
-
-   plt.figure(figsize=(13, 13))
-
-   # Plot for the 1st latent dimension
-   plt.subplot(2, 1, 1)
-
-   # Plot true Z
-   plt.plot(time_array, true_Z[latent_from_first_obs][0, :], label='True Z', linestyle='--', marker='o', color='blue', linewidth=3)
-
-   # Plot inferred pZ_mu
-   plt.plot(time_array, pZ_mu[latent_from_first_obs][0, :], label='Inferred Z', linestyle='--', marker='s', color='red', linewidth=3)
-
-   # Plot inferred Z_orth
-   plt.plot(time_array, Z_orth[latent_from_first_obs][0, :], label='Inferred Z_orth', linestyle='--', marker='x', color='green', linewidth=3)
-
-   plt.ylabel('Latent Dimension 1', fontsize=20)
-   plt.title(f'Comparison of Latent Dimension 1 from 1st Observations', fontsize=20)
-   plt.xticks(np.arange(0, total_time_span + 1, 2), np.arange(0, num_seconds + 1, 2), fontsize=20)
-   plt.yticks(fontsize=20)
-   plt.legend(fontsize=25)
-
-   # Plot for the 2nd latent dimension
-   plt.subplot(2, 1, 2)
-
-   # Plot true Z
-   plt.plot(time_array, true_Z[latent_from_second_obs][0, :], label='True Z', linestyle='--', marker='o', color='blue', linewidth=3)
-
-   # Plot inferred pZ_mu
-   plt.plot(time_array, pZ_mu[latent_from_second_obs][0, :], label='Inferred Z', linestyle='--', marker='s', color='red', linewidth=3)
-
-   # Plot inferred Z_orth
-   plt.plot(time_array, Z_orth[latent_from_second_obs][0, :], label='Inferred Z_orth', linestyle='--', marker='x', color='green', linewidth=3)
-
-   plt.xlabel('Time in Seconds', fontsize=25)
-   plt.ylabel('Latent Dimension 1', fontsize=20)
-   plt.title(f'Comparison of Latent Dimension 1 from 2nd Observations', fontsize=20)
-   plt.xticks(np.arange(0, total_time_span + 1, 2), np.arange(0, num_seconds + 1, 2), fontsize=20)
-   plt.yticks(fontsize=20)
+   # plot first latent from second sequence
+   axs[1].plot(tsdt, true_Z_orth[1][0,:], label='true $Z_{1,:}$ (orth)', c='blue')
+   axs[1].plot(tsdt, -Z_orth[1][0,:], label='inf $Z_{1,:}$ (orth)', c='orange')
+   axs[1].legend()
+   axs[1].set_xlabel('time $t$')
+   axs[1].set_ylabel('$Z_{1,:}$ from second sequence')
 
    plt.tight_layout()
    plt.show()
 
 
-.. image:: ../examples/example-2.png
+.. image:: /_static/example-2.png
    :width: 600
    :height: 600
    :alt: Results Image
@@ -412,9 +380,9 @@ Let's get the latent trajectories (both orthogonal and standard) on the training
 
 .. code-block:: python
 
-   outs, ll = gpfa.predict(returned_data=['pZ_mu', 'pZ_mu_orth'])
-   latent_trajectories_train, latent_trajectories_orth_train = outs['pZ_mu'].reshape((n_reaches, n_train_trials)),
-            outs['pZ_mu_orth'].reshape((n_reaches, n_train_trials))
+   outs, ll = gpfa.predict(returned_data=['Z_mu', 'Z_mu_orth'])
+   latent_trajectories_train, latent_trajectories_orth_train = outs['Z_mu'].reshape((n_reaches, n_train_trials)),
+            outs['Z_mu_orth'].reshape((n_reaches, n_train_trials))
 
 Let's get test data from the spiketrains, converts event times to spike counts, applies a square root transformation, removes inactive neurons, and predicts latent trajectories on the test set using the trained GPFA model.
 
@@ -431,11 +399,11 @@ Let's get test data from the spiketrains, converts event times to spike counts, 
    non_zero_spiketrains_test = [np.delete(test, row_to_drop, axis=0) for test in sqrt_spiketrains_test]
 
    # Predict latent trajectories on the preprocessed test data
-   outs, ll = gpfa.predict(non_zero_spiketrains_test, returned_data=['pZ_mu', 'pZ_mu_orth'])
+   outs, ll = gpfa.predict(non_zero_spiketrains_test, returned_data=['Z_mu', 'Z_mu_orth'])
 
    # Reshape the predicted latent trajectories for further analysis
-   latent_trajectories_test, latent_trajectories_orth_test = outs['pZ_mu'].reshape((n_reaches, n_test_trials)), \
-               outs['pZ_mu_orth'].reshape((n_reaches, n_test_trials))
+   latent_trajectories_test, latent_trajectories_orth_test = outs['Z_mu'].reshape((n_reaches, n_test_trials)), \
+               outs['Z_mu_orth'].reshape((n_reaches, n_test_trials))
 
 Next, we'll assess the variance explained on the test set.
 
@@ -567,11 +535,11 @@ Let's predict latent trajectories on the preprocessed test data
 
 .. code-block:: python
    
-   outs, ll = gpfa_with_multi_params_kernel.predict(non_zero_spiketrains_test, returned_data=['pZ_mu', 'pZ_mu_orth'])
+   outs, ll = gpfa_with_multi_params_kernel.predict(non_zero_spiketrains_test, returned_data=['Z_mu', 'Z_mu_orth'])
 
    # Reshape the predicted latent trajectories for further analysis
-   latent_trajectories_test, latent_trajectories_orth_test = outs['pZ_mu'].reshape((n_reaches, n_test_trials)), \
-            outs['pZ_mu_orth'].reshape((n_reaches, n_test_trials))
+   latent_trajectories_test, latent_trajectories_orth_test = outs['Z_mu'].reshape((n_reaches, n_test_trials)), \
+            outs['Z_mu_orth'].reshape((n_reaches, n_test_trials))
 
 Let's assess the varince explained.
 
@@ -697,7 +665,7 @@ Let’s plot the obtained log-likeliyhood as a function of the dimensionality.
    plt.tight_layout()
    plt.show()
 
-.. image:: ../examples/log-likelihoods.png
+.. image:: /_static/log-likelihoods.png
    :width: 600
    :height: 430
    :alt: Results Image
