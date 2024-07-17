@@ -81,7 +81,7 @@ class GPFA(sklearn.base.BaseEstimator):
         where ML parameter learning returns one or more zero private variances
         (see Martin & McDonald, Psychometrika, Dec 1975).
 
-    em_tol : float, optional, default=1e-8
+    em_tol : float, optional, default=1e-5
         Stopping criterion for Expectation Maximization (EM) algorithm.
 
     em_max_iters : int, optional, default=500
@@ -123,13 +123,13 @@ class GPFA(sklearn.base.BaseEstimator):
         Copy of latent variable time-courses, inferred for training data, and 
         augmented with additional fields.
 
-        pZ_mu : numpy.ndarray, shape (z_dim, bins)
+        Z_mu : numpy.ndarray, shape (z_dim, bins)
             Latent variable posterior means for each time bin.
 
-        pZ_cov : numpy.ndarray, shape (z_dim, z_dim, bins)
+        Z_cov : numpy.ndarray, shape (z_dim, z_dim, bins)
             Latent variable posterior covariances across different time bins.
 
-        pZ_covGP : numpy.ndarray, shape (bins, bins, z_dim)
+        Z_covGP : numpy.ndarray, shape (bins, bins, z_dim)
             Posterior covariance over time for each latent variable.
 
     valid_data_names_ : tuple of str
@@ -191,57 +191,44 @@ class GPFA(sklearn.base.BaseEstimator):
     --------
     >>> import numpy as np
     >>> from gpfa import GPFA
-    >>> 
+
     >>> X = np.array([[
     ...     [3, 1, 0, 4, 1, 2, 1, 3, 4, 2, 2, 1, 2, 0, 0, 2, 2, 5, 1, 3],
     ...     [1, 0, 2, 0, 2, 1, 4, 2, 0, 1, 4, 4, 1, 2, 8, 3, 2, 1, 3, 1],
     ...     [2, 2, 1, 1, 3, 2, 3, 2, 2, 0, 3, 4, 1, 2, 3, 1, 4, 1, 0, 1]
     ... ]])
     >>> 
-    >>> z_dim = 1
-    >>> gpfa_model = GPFA(z_dim=z_dim)
-    >>> 
+    >>> gpfa_model = GPFA(z_dim=1)
+
     >>> # Fit the model
     >>> gpfa_model.fit(X)
     Initializing parameters using factor analysis...
     Fitting GPFA model...
-    >>> 
+
     >>> # Infere latent variable time-courses for the same data
-    >>> infered_latent_variable, _ = gpfa_model.predict()
-    >>> 
-    >>> print('Infered Latent:')
-    >>> print(infered_latent_variable)
-    Infered Latent:
+    >>> Zs, _ = gpfa_model.predict()
+    >>> print(Zs)
     [array([[-1.18405633, -2.00878   , -0.01470251, -2.3143544 ,  0.03651376,
              -1.06948736,  2.05355342, -0.16920794, -2.26437342, -1.21934552,
               1.98656088,  2.13305066, -1.14113106,  0.11319858,  6.14998095,
               0.89241818,  0.03509708, -1.3936327 ,  0.84781358, -1.2281484 ]])]
-    >>> 
-    >>> # Display the loading matrix and observation mean parameter
-    >>> print('Loading Matrix (C_):')
+
+    >>> # Display the loading matrix (C_) and observation mean (d_) parameters
     >>> print(gpfa_model.C_)
-    Loading Matrix (C_):
     [[-0.78376501]
     [ 1.77773876]
     [ 0.51134474]]
-    >>> 
-    >>> print('Observation Mean (d_):')
+
     >>> print(gpfa_model.d_)
-    Observation Mean (d_):
     [1.95470037 2.08933859 1.89693338]
-    >>> 
+
     >>> # Obtaining log-likelihood scores
-    >>> log_likelihoods = gpfa_model.score()
-    >>> print('Log Likelihoods:')
-    >>> print(log_likelihoods)
-    Log Likelihoods:
+    >>> llhs = gpfa_model.score()
+    >>> print(llhs)
     [-117.54588379661148, -107.17193271370158, ..., -100.13200154180569]
-    >>> 
+
     >>> # Evaluate the total explained variance regression score
-    >>> explained_variance = gpfa_model.variance_explained()
-    >>> print('Explained Variance')
-    >>> print(explained_variance)
-    Explained Variance
+    >>> print(gpfa_model.variance_explained())
     (0.6581475357501596, array([0.65814754]))
 
 
@@ -258,7 +245,7 @@ class GPFA(sklearn.base.BaseEstimator):
     """
 
     def __init__(self, bin_size=0.02, gp_kernel=None, z_dim=3,
-                 min_var_frac=0.01, em_tol=1.0E-8, em_max_iters=500,
+                 min_var_frac=0.01, em_tol=1.0E-5, em_max_iters=500,
                  freq_ll=5, verbose=False):
         self.bin_size = bin_size
         self.z_dim = z_dim
@@ -268,10 +255,10 @@ class GPFA(sklearn.base.BaseEstimator):
         self.em_max_iters = em_max_iters
         self.freq_ll = freq_ll
         self.valid_data_names_ = (
-            'pZ_mu_orth',
-            'pZ_mu',
-            'pZ_cov',
-            'pZ_covGP',
+            'Z_mu_orth',
+            'Z_mu',
+            'Z_cov',
+            'Z_covGP',
             'X')
         self.verbose = verbose
 
@@ -452,7 +439,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         return self
 
-    def predict(self, X=None, returned_data=['pZ_mu_orth']):
+    def predict(self, X=None, returned_data=['Z_mu_orth']):
         """
         Provides the inferred latent variable time-courses and other
         moments thereof, if requested.
@@ -467,19 +454,19 @@ class GPFA(sklearn.base.BaseEstimator):
                 If ``X=None``, the latent state estimates for the last ``X``
                 that :meth:`fit` was called with are returned.
 
-        returned_data : list of str, default ['pZ_mu_orth']
+        returned_data : list of str, default ['Z_mu_orth']
             Determines which moments of the inferred latent variable
             time-courses, and other data are returned. Valid strings are:
 
-                ``'pZ_mu'`` : posterior mean of latent variables before
+                ``'Z_mu'`` : posterior mean of latent variables before
                 orthonormalization
 
-                ``'pZ_mu_orth'`` : orthonormalized posterior mean of latent
+                ``'Z_mu_orth'`` : orthonormalized posterior mean of latent
                 variable
 
-                ``'pZ_cov'`` : posterior covariance between latent variables
+                ``'Z_cov'`` : posterior covariance between latent variables
 
-                ``'pZ_covGP'`` : posterior covariance over time for each latent
+                ``'Z_covGP'`` : posterior covariance over time for each latent
                 variable
 
                 ``'X'`` : time-series data used to estimate the GPFA model
@@ -499,13 +486,13 @@ class GPFA(sklearn.base.BaseEstimator):
             the :math:`n` th time-series in the provided ``X``. Its size
             differs depending on the requested moment, and is
 
-                ``pZ_mu``: numpy.ndarray of shape (z_dim x bins)
+                ``Z_mu``: numpy.ndarray of shape (z_dim x bins)
 
-                ``pZ_mu_orth``: numpy.ndarray of shape (z_dim x bins)
+                ``Z_mu_orth``: numpy.ndarray of shape (z_dim x bins)
 
-                ``pZ_cov``: numpy.ndarray of shape (z_dim x z_dim x bins)
+                ``Z_cov``: numpy.ndarray of shape (z_dim x z_dim x bins)
 
-                ``pZ_covGP``: numpy.ndarray of shape (bins x bins x z_dim)
+                ``Z_covGP``: numpy.ndarray of shape (bins x bins x z_dim)
 
                 ``X`` : numpy.ndarray of shape (x_dim x bins)
 
@@ -532,7 +519,7 @@ class GPFA(sklearn.base.BaseEstimator):
             lls = self.fit_info_['log_likelihoods']
         else:
             seqs, lls = self._infer_latents(X, get_ll=True)
-        if 'pZ_mu_orth' in returned_data:
+        if 'Z_mu_orth' in returned_data:
             seqs = self._orthonormalize(seqs)
         if len(returned_data) == 1:
             return seqs[returned_data[0]], lls
@@ -600,11 +587,11 @@ class GPFA(sklearn.base.BaseEstimator):
 
         """
         if X is None:
-            seqs, _ = self.predict(returned_data=['X', 'pZ_mu_orth'])
-            X, pZ_mu_orth = seqs['X'], seqs['pZ_mu_orth']
+            seqs, _ = self.predict(returned_data=['X', 'Z_mu_orth'])
+            X, Z_mu_orth = seqs['X'], seqs['Z_mu_orth']
         else:
-            seqs, _ = self.predict(X=X, returned_data=['pZ_mu_orth'])
-            pZ_mu_orth = seqs
+            seqs, _ = self.predict(X=X, returned_data=['Z_mu_orth'])
+            Z_mu_orth = seqs
 
         Corth = self.Corth_
         x_mean = self.d_[:, np.newaxis]
@@ -615,8 +602,8 @@ class GPFA(sklearn.base.BaseEstimator):
         for i, x in enumerate(X):
             xc = x - x_mean
             SStot += np.sum(xc ** 2)
-            SSreg += 2 * np.sum(pZ_mu_orth[i] * (Corth.T @ xc), axis=1) \
-                - Corth2 * np.sum(pZ_mu_orth[i] ** 2, axis=1)
+            SSreg += 2 * np.sum(Z_mu_orth[i] * (Corth.T @ xc), axis=1) \
+                - Corth2 * np.sum(Z_mu_orth[i] ** 2, axis=1)
 
         latent_R2s = SSreg / SStot
         R2 = np.sum(latent_R2s)
@@ -639,12 +626,12 @@ class GPFA(sklearn.base.BaseEstimator):
         latent_seqs : numpy.recarray
             a copy of the training data structure, augmented with the new
             fields:
-            pZ_mu : numpy.ndarray of shape (z_dim x bins)
+            Z_mu : numpy.ndarray of shape (z_dim x bins)
                 posterior mean of latent variables at each time bin
-            pZ_cov : numpy.ndarray of shape (z_dim, z_dim, bins)
+            Z_cov : numpy.ndarray of shape (z_dim, z_dim, bins)
                 posterior covariance between latent variables at each
                 timepoint
-            pZ_covGP : numpy.ndarray of shape (bins, bins, z_dim)
+            Z_covGP : numpy.ndarray of shape (bins, bins, z_dim)
                 posterior covariance over time for each latent
                 variable
         """
@@ -693,11 +680,11 @@ class GPFA(sklearn.base.BaseEstimator):
             # ==== M STEP ====
             sum_p_auto = np.zeros((self.z_dim, self.z_dim))
             for seq_latent in latent_seqs:
-                sum_p_auto += seq_latent['pZ_cov'].sum(axis=2) \
-                    + seq_latent['pZ_mu'].dot(
-                    seq_latent['pZ_mu'].T)
+                sum_p_auto += seq_latent['Z_cov'].sum(axis=2) \
+                    + seq_latent['Z_mu'].dot(
+                    seq_latent['Z_mu'].T)
             X_all = np.hstack(X)
-            Z_all = np.hstack(latent_seqs['pZ_mu'])
+            Z_all = np.hstack(latent_seqs['Z_mu'])
             sum_XZtrans = X_all.dot(Z_all.T)
             sum_Zall = Z_all.sum(axis=1)[:, np.newaxis]
             sum_Xall = X_all.sum(axis=1)[:, np.newaxis]
@@ -786,11 +773,11 @@ class GPFA(sklearn.base.BaseEstimator):
                 input data structure, whose n-th element (corresponding to the
                 n-th experimental trial) has fields:
                 X : numpy.ndarray of shape (x_dim, bins)
-            pZ_mu : (z_dim, bins) numpy.ndarray
+            Z_mu : (z_dim, bins) numpy.ndarray
                 posterior mean of latent variables at each time bin
-            pZ_cov : (z_dim, z_dim, bins) numpy.ndarray
+            Z_cov : (z_dim, z_dim, bins) numpy.ndarray
                 posterior covariance between latent variables at each timepoint
-            pZ_covGP : (bins, bins, z_dim) numpy.ndarray
+            Z_covGP : (bins, bins, z_dim) numpy.ndarray
                     posterior covariance over time for each latent trajectory
         ll : float
             data log likelihood, returned when `get_ll` is set True
@@ -803,8 +790,8 @@ class GPFA(sklearn.base.BaseEstimator):
             seq['X'] = X[s]
 
         dtype_out = [(i, X_out[i].dtype) for i in X_out.dtype.names]
-        dtype_out.extend([('pZ_mu', object), ('pZ_cov', object),
-                          ('pZ_covGP', object)])
+        dtype_out.extend([('Z_mu', object), ('Z_cov', object),
+                          ('Z_covGP', object)])
         latent_seqs = np.empty(len(X_out), dtype=dtype_out)
         for dtype_name in X_out.dtype.names:
             latent_seqs[dtype_name] = X_out[dtype_name]
@@ -892,10 +879,10 @@ class GPFA(sklearn.base.BaseEstimator):
             Z_mat = M_inv.dot(term1_mat)
 
             for i, n in enumerate(n_list):
-                latent_seqs[n]['pZ_mu'] = \
+                latent_seqs[n]['Z_mu'] = \
                     Z_mat[:, i].reshape((self.z_dim, t), order='F')
-                latent_seqs[n]['pZ_cov'] = vsm
-                latent_seqs[n]['pZ_covGP'] = vsm_gp
+                latent_seqs[n]['Z_cov'] = vsm
+                latent_seqs[n]['Z_covGP'] = vsm_gp
 
             if get_ll:
                 # Compute data likelihood
@@ -955,23 +942,23 @@ class GPFA(sklearn.base.BaseEstimator):
             experimental trial) has field
             X : numpy.ndarray of shape (x_dim, bins)
                 observed data
-            pZ_mu : numpy.ndarray of shape (z_dim, bins)
+            Z_mu : numpy.ndarray of shape (z_dim, bins)
                 posterior mean of latent variables at each time bin
-            pZ_cov : numpy.ndarray of shape (z_dim, z_dim, bins)
+            Z_cov : numpy.ndarray of shape (z_dim, z_dim, bins)
                 posterior covariance between latent variables at each timepoint
-            pZ_covGP : numpy.ndarray of shape (bins, bins, z_dim)
+            Z_covGP : numpy.ndarray of shape (bins, bins, z_dim)
                 posterior covariance over time for each latent trajectory
 
         Returns
         -------
         seqs : numpy.recarray
             Training data structure that contains the new field
-            `pZ_mu_orth`, the orthonormalized trajectories.
+            `Z_mu_orth`, the orthonormalized trajectories.
         """
-        Z_all = np.hstack(seqs['pZ_mu'])
-        pZ_mu_orth = np.dot(self.OrthTrans_, Z_all)
-        # add the field `pZ_mu_orth` to seq
-        seqs = self._segment_by_trial(seqs, pZ_mu_orth, 'pZ_mu_orth')
+        Z_all = np.hstack(seqs['Z_mu'])
+        Z_mu_orth = np.dot(self.OrthTrans_, Z_all)
+        # add the field `Z_mu_orth` to seq
+        seqs = self._segment_by_trial(seqs, Z_mu_orth, 'Z_mu_orth')
 
         return seqs
 
@@ -1186,9 +1173,9 @@ class GPFA(sklearn.base.BaseEstimator):
                 # Loop once for each trial (each of nList)
                 for n in precomp['Tu'][j]['nList']:
                     precomp['Tu'][j]['PautoSUM'][i, :, :] += \
-                        Seqs[n]['pZ_covGP'][i, :, :] \
+                        Seqs[n]['Z_covGP'][i, :, :] \
                         + np.outer(
-                            Seqs[n]['pZ_mu'][i, :], Seqs[n]['pZ_mu'][i, :]
+                            Seqs[n]['Z_mu'][i, :], Seqs[n]['Z_mu'][i, :]
                             )
         return precomp
 
