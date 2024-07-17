@@ -95,7 +95,7 @@ This example illustrates the application of GPFA to data analysis by encompassin
       x = C @ z + np.random.normal(0, sqrtR[:, np.newaxis] , (x_dim, T_per_obs))
       X.append(x)
 
-   gpfa = GPFA(bin_size=bin_size, z_dim=z_dim, em_tol=1e-4)
+   gpfa = GPFA(bin_size=bin_size, z_dim=z_dim, em_tol=1e-3, verbose=True)
    gpfa.fit(X)  # this will take a while
 
    results = gpfa.predict(returned_data=['Z_mu_orth', 'Z_mu'])
@@ -104,7 +104,11 @@ This example illustrates the application of GPFA to data analysis by encompassin
 
 .. code-block:: console
 
-   (0.9830394844469381, array([0.798201  , 0.18483849]))
+   Initializing parameters using factor analysis...
+
+   Fitting GPFA model...
+   Fitting has converged after 135 EM iterations.
+   (0.9834339959622203, array([0.80069798, 0.18273602]))
 
 Note that, due to differences in the linear algebra packages used on different machine architectures and operating systems, the above results might differ across machines.
 
@@ -122,8 +126,8 @@ Let us now visualize the true orthogonalized latents against the inferred orthog
    true_Z_orth = [gpfa.OrthTrans_ @ Zn for Zn in true_Z]
 
    # Extract Z_orth and pZ_mu from results
-   Z_orth = results[0]['pZ_mu_orth']
-   Z_mu = results[0]['pZ_mu']
+   Z_orth = results[0]['Z_mu_orth']
+   Z_mu = results[0]['Z_mu']
 
    fig, axs = plt.subplots(2, 1, figsize=(13, 13))
 
@@ -156,7 +160,7 @@ Let us now visualize the true orthogonalized latents against the inferred orthog
 
 (ii) Applying GPFA to real neural Data
 --------------------------------------
-In the next example, we apply GPFA to real neural data obtained from DANDI archive [Even2022]_. The data originates from recordings of monkey J during the 3-ring task, with the following key details:
+In the next example, we apply GPFA to real neural data obtained from DANDI archive [Even2022]. In order to run this example, please download the two sub-JenkindsC_ses-2016*.nwb files from the sub-JenkinsC folder of the archive and place them in a local directory. The data originates from recordings of monkey J during the 3-ring task, with the following key details:
 
 - The task was a center-out-and-back reaching task with 48 targets arranged in three concentric rings of 4, 8, and 12 cm radius, each with 16 targets.
 - The monkey had to reach to a target that was randomly selected and presented on a screen, hold for 500 ms, and then return to the center.
@@ -168,7 +172,7 @@ In the next example, we apply GPFA to real neural data obtained from DANDI archi
    
    This example is intended to showcase key functionalities of GPFA and does not aim to conduct an in-depth analysis of the provided data. For a comprehensive analysis, please refer to [Even2019]_.
 
-Now, let's preprocess the spike data from two NWB files using the following code:
+Now, let's preprocess the spike data from two NWB files using the following code. This code requires pandas and pynwb to be installed. It was tested with pandas-2.2.2 and pynwb-2.8.0.
 
 .. code-block:: python
 
