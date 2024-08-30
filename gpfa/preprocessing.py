@@ -152,24 +152,23 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
             A numpy matrix of size #sequences x #bins, containing the
             binned event counts.
         """
-        # ==========================================================================
-        # set the starting time of the trial (`t_start`) and the end time (`t_stop`)
-        # ==========================================================================
+        # ==============================================
+        # set the starting time of the trial (`t_start`)
+        # and the end time (`t_stop`)
+        # ==============================================
         t_start = 0
-        if self.t_stop is None:
+        t_stop = self.t_stop
+        if t_stop is None:
             if hasattr(X[0], 't_stop'):
-                self.t_stop = X[0].t_stop.magnitude
+                t_stop = X[0].t_stop.magnitude
             else:
-                self.t_stop = max(
-                    map(lambda x: x[-1] if (isinstance(x, np.ndarray) and np.any(x)) or \
-                         (isinstance(x, list) and any(x)) else 0, X)
-                    )
+                t_stop = max(map(lambda x: x[-1], X))
 
         # ====================================
         # get the bins based on the `bin_size`
         # ====================================
         edges = np.arange(t_start,
-                          self.t_stop + self.bin_size * 0.1,
+                          t_stop + self.bin_size * 0.1,
                           self.bin_size)
 
         # =============================
@@ -177,44 +176,46 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
         # =============================
         # we do not want any edge beyond `t_stop`,
         # if there is any edge `> t_stop` we remove it
-        if edges[-1] > self.t_stop:
+        if edges[-1] > t_stop:
             edges = edges[:-1]
         # Check if user wants to extrapolate the last bin
-        if self.extrapolate_last_bin:
-            if self.t_stop > edges[-1]:
+        extrapolate_last_bin = self.extrapolate_last_bin
+        if extrapolate_last_bin:
+            if t_stop > edges[-1]:
                 edges = np.hstack((edges, edges[-1] + self.bin_size))
-                last_bin_scaling = self.bin_size / (self.t_stop - edges[-2])
+                last_bin_scaling = self.bin_size / (t_stop - edges[-2])
             else:
-                self.extrapolate_last_bin = False
+                extrapolate_last_bin = False
 
         # =======================
         # create an output matrix
         # =======================
         X_out = np.empty((len(X), len(edges) - 1),
-                         dtype=(float if self.extrapolate_last_bin else int))
+                         dtype=(float if extrapolate_last_bin else int))
 
-        # =============================================================
-        # Loop over event time sequences to compute binned spike counts
-        # =============================================================
-        for i, eventseq in enumerate(X):
+        # ======================================
+        # Loop over each neuron in a given trial
+        # to get the binned spike counts
+        # ======================================
+        for i, spiketrain in enumerate(X):
 
             # If neo.SpikeTrain, get the timesteps
-            # of each neuron via `eventseq.magnitude`
-            if hasattr(eventseq, 'units'):
-                if self.t_stop != eventseq.t_stop.magnitude:
+            # of each neuron via `spiketrain.magnitude`
+            if hasattr(spiketrain, 'units'):
+                if t_stop != spiketrain.t_stop.magnitude:
                     raise ValueError(
-                        f'The specified or computed `t_stop`: {self.t_stop} '
+                        f'The specified or computed `t_stop`: {t_stop} '
                         f'is different from the {i}_th spikeTrain `t_stop` '
                         "`t_stop` must be the same across all neurons."
                     )
-                eventseq = eventseq.magnitude
+                spiketrain = spiketrain.magnitude
 
             # binning happens here
-            X_out[i, :] = np.histogram(eventseq, edges)[0]
+            X_out[i, :] = np.histogram(spiketrain, edges)[0]
         # ========================
         # extrapolate the last bin
         # ========================
-        if self.extrapolate_last_bin:
+        if extrapolate_last_bin:
             X_out[:, -1] *= last_bin_scaling
 
         return X_out
