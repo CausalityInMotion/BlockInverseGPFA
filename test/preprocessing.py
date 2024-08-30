@@ -248,3 +248,19 @@ class TestProprocessing(unittest.TestCase):
         trans6 = self.T_with_extrapolatelastbin_tstopNone.transform(
             self.X4_at_tstop2)
         self.assertEqual(self.results_at_tstop1.all(), trans6.all())
+
+    def test_multi_transform(self):
+        """
+        Test `EvenTimesToCounts.transform` to be called multiple
+        times with different inputs.
+        """
+        # this test is making sure that transform(.) returns
+        # different sizes of output for X1 and X2 for the same
+        # EventTimesToCounts instance. This ensures that t_stop is
+        # re-evaluated with every transform(.) call.
+        trans1 = self.T_with_extrapolatelastbin_tstopNone.transform(
+            self.X1_at_tstop1)
+        trans2 = self.T_with_extrapolatelastbin_tstopNone.transform(
+            self.X1_at_tstop2)
+        self.assertEqual(trans1.shape, (2, 4))
+        self.assertEqual(trans2.shape, (2, 5))

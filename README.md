@@ -55,8 +55,8 @@ $ open _build/html/index.html
 To run the unittests in the [test](test) folder, use the following command in your command line/terminal:
 
 ```bash
-$ python -m unittest test.test_gpfa
-$ python -m unittest test.test_preprocessing
+$ python -m unittest test.gpfa
+$ python -m unittest test.preprocessing
 ```
 
 ## License
