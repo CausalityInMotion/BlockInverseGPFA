@@ -53,7 +53,7 @@ class EventTimesToCounts(sklearn.base.TransformerMixin):
     Examples
     --------
     >>> import numpy as np
-    >>> from gpfa.preprocessing import EventTimesToCounts
+    >>> from gpfa import EventTimesToCounts
     >>> bin_size = 0.1  # [s]
     >>> t_stop = 0.8  # [s]
     >>> X = [
