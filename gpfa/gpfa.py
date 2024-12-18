@@ -803,7 +803,7 @@ class GPFA(sklearn.base.BaseEstimator):
         else:
             rinv = linalg.inv(self.R_)
             rinv = (rinv + rinv.T) / 2  # ensure symmetry
-            logdet_r = fast_logdet(self.R_)
+            logdet_r = self._logdet(self.R_)
 
         c_rinv = self.C_.T.dot(rinv)
         c_rinv_c = c_rinv.dot(self.C_)
@@ -825,12 +825,10 @@ class GPFA(sklearn.base.BaseEstimator):
         for t in unique_Ts:
             if t == unique_Ts[0]:
                 K_big_inv = linalg.inv(K_big[:t * self.z_dim, :t * self.z_dim])
-                logdet_k_big = fast_logdet(
-                    K_big[:t * self.z_dim, :t * self.z_dim]
-                    )
-                M = K_big_inv + C_rinv_c_big[:t * self.z_dim, :t * self.z_dim]
+                logdet_k_big = self._logdet(K_big[:t * self.z_dim, :t * self.z_dim])
+                M = K_big_inv + C_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
                 M_inv = linalg.inv(M)
-                logdet_M = fast_logdet(M)
+                logdet_M = self._logdet(M)
             else:
                 # Here, we compute the inverse of K for the current t from its
                 # known inverse for the previous t, using block matrix
@@ -961,6 +959,14 @@ class GPFA(sklearn.base.BaseEstimator):
         seqs = self._segment_by_trial(seqs, Z_mu_orth, 'Z_mu_orth')
 
         return seqs
+    
+    def _logdet(self, A):
+        """
+        log(det(A)) where A is positive-definite.
+        This is faster and more stable than using log(det(A)).
+        """
+        U = np.linalg.cholesky(A)
+        return 2 * (np.log(np.diag(U))).sum()
 
     def _cut_trials(self, X_in, seg_length=20):
         """
@@ -1092,12 +1098,15 @@ class GPFA(sklearn.base.BaseEstimator):
             [MAinv, MCinv.T],
             [MCinv, MDinv]
         ])
-
-        logdet_MD = fast_logdet(MD)
+        # Check if MD is positive definite
+        try:
+            logdet_MD = self._logdet(MD)  # Use Cholesky decomposition if possible
+        except np.linalg.LinAlgError:
+            logdet_MD = fast_logdet(MD)  # Fallback to fast_logdet for non-PD matrices
         logdet_M = -logdet_Ainv + logdet_MD
         if X is not None:
             if logdet_X is None:
-                logdet_X = fast_logdet(X)
+                logdet_X = self._logdet(X)
             MDpAinvBXAinvB = MD + AinvB.T @ X @ AinvB
             MAinv = X - X @ AinvB @ linalg.inv(MDpAinvBXAinvB) @ AinvB.T @ X
             logdet_MAinv = logdet_MD + logdet_X - fast_logdet(MDpAinvBXAinvB)
@@ -1214,7 +1223,7 @@ class GPFA(sklearn.base.BaseEstimator):
             T = precomp['Tu'][j]['T']
             if j == 0:
                 Kinv = linalg.inv(Kmax[:T, :T])
-                logdet_K = fast_logdet(Kmax[:T, :T])
+                logdet_K = self._logdet(Kmax[:T, :T])
             else:
                 # Here, we compute the inverse of K for the current
                 # T from its known inverse for the previous T,
