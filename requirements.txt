@@ -1,5 +1,7 @@
 joblib==1.2.0
+nbsphinx==0.9.5
 numpy==1.24.3
+numpydoc==1.8.0
 scikit-learn==1.2.2
 scipy==1.10.1
 tqdm==4.65.0
