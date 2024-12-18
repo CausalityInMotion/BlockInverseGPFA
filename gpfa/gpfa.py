@@ -915,6 +915,17 @@ class GPFA(sklearn.base.BaseEstimator):
         seqs = self._segment_by_trial(seqs, pZ_mu_orth, 'pZ_mu_orth')
 
         return seqs
+    
+    def _logdet(self, A):
+        """
+        log(det(A)) where A is positive-definite.
+        This is faster and more stable than using log(det(A)).
+
+        Written by Tom Minka
+        (c) Microsoft Corporation. All rights reserved.
+        """
+        U = np.linalg.cholesky(A)
+        return 2 * (np.log(np.diag(U))).sum()
 
     def _cut_trials(self, X_in, seg_length=20):
         """
