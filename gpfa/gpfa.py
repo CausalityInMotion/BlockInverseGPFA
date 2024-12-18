@@ -918,9 +918,6 @@ class GPFA(sklearn.base.BaseEstimator):
         """
         log(det(A)) where A is positive-definite.
         This is faster and more stable than using log(det(A)).
-
-        Written by Tom Minka
-        (c) Microsoft Corporation. All rights reserved.
         """
         U = np.linalg.cholesky(A)
         return 2 * (np.log(np.diag(U))).sum()
