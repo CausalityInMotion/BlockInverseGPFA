@@ -35,14 +35,6 @@ Overall, the model has emission model parameters :math:`\boldsymbol{C}`, :math:`
 
 Notes
 =====
-.. These are some of the things worthy of note, but I think they are better
-.. fitted in the GPFA class documentation (we can discuss this).
-.. - Differences between the original implementation and the current one:
-  
-..   - Using :func:`use_cut_trials`, pros and cons
-..   - block inverse computation
-..   - GP Kernel
-..   - Variance explained
 
 GPFA differs from the popular `PCA <https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.PCA.html>`_ in two significant ways:
 
@@ -52,89 +44,123 @@ GPFA differs from the popular `PCA <https://scikit-learn.org/stable/modules/gene
 
 .. _examples:
 
-Examples (TODO)
-===============
-.. Discuss appropriate examples
+Examples
+========
 
->>> import numpy as np
->>> from gpfa import GPFA
->>> from sklearn.gaussian_process.kernels import RBF, WhiteKernel
->>> from sklearn.gaussian_process.kernels import ConstantKernel
+.. _example_1:
 
->>> # set random parameters
->>> seed = [0, 8, 10]
->>> z_dim = 3
->>> units = 10
->>> tau_f = 0.1
->>> sigma_n = 0.001
->>> sigma_f = 1 - sigma_n
->>> bin_size = 0.02  # [s]
->>> num_trials = 3
->>> n_timesteps = 500
->>> kernel = ConstantKernel(
-...                    sigma_f, constant_value_bounds='fixed'
-...                    ) * RBF(length_scale=tau_f) + ConstantKernel(
-...                    sigma_n, constant_value_bounds='fixed'
-...                    ) * WhiteKernel(
-...                        noise_level=1, noise_level_bounds='fixed'
-...                    )
->>> tsdt = np.arange(0, n_timesteps) * bin_size
->>> mu = np.zeros(tsdt.shape)
->>> cov = kernel(tsdt[:, np.newaxis])
->>> C = np.random.uniform(0, 2, (units, z_dim))     # loading matrix
->>> obs_noise = np.random.uniform(0.2, 0.75, units) # rand noise parameters
->>> X = []
->>> for n in range(num_trials):
->>>     np.random.seed(seed[n])
->>>     # Draw three latent state samples from a Gaussian process
->>>     # using the above cov
->>>     Z = np.random.multivariate_normal(mu.ravel(), cov, z_dim)
->>>     # observations have Gaussian noise
->>>     x = C @ Z + np.random.normal(0, obs_noise, (n_timesteps, units)).T
->>>     X.append(x)
->>> gpfa = GPFA(bin_size=bin_size, z_dim=z_dim)
->>> gpfa.fit(X)
-Initializing parameters using factor analysis...
-Fitting GPFA model...
->>> results, _ = gpfa.predict(returned_data=['pZ_mu', 'pZ_mu_orth'])
->>> pZ_mu_orth = results['pZ_mu_orth']
->>> pZ_mu = results['pZ_mu']
->>> gpfa.variance_explained()
-(0.93590..., array([0.76541..., 0.10446..., 0.066033...]))
+(i) Applying GPFA to synthetic data
+-----------------------------------
 
->>> # GPFA on synthetic spike data
->>> import numpy as np
->>> from gpfa import GPFA
->>> from gpfa.preprocessing import EventTimesToCounts
->>> from sklearn.preprocessing import FunctionTransformer
->>> seed = [0, 8, 10, 42, 60]
->>> rate = 50
->>> units = 10
->>> durations = [500, 550, 600, 650, 700]  # [ms]
->>> num_trials = len(durations)
->>> X = np.zeros(num_trials, object)
->>> for i in range(num_trials):
->>>     np.random.seed(seed[i])
->>>     Data[i] = np.random.poisson(rate, (units, durations[i]))
->>> event_times_to_counts = EventTimesToCounts(extrapolate_last_bin=True)
->>> binned_spiketrians = [
-...    event_times_to_counts.transform(x_i) for x_i in X
-...    ]
->>> fun_trans = FunctionTransformer(np.sqrt)
->>> sqrt_spike_trains = [
-...    fun_trans.transform(x_i) for x_i in binned_spiketrians
-...    ]
->>> z_dim = 3
->>> bin_size = 0.02  # [s]
->>> gpfa = GPFA(bin_size=bin_size, z_dim=z_dim, em_max_iters=2)
->>> gpfa.fit(X)
-Initializing parameters using factor analysis...
-Fitting GPFA model...
->>> results, _ = gpfa.predict(returned_data=['pZ_mu','pZ_mu_orth'])
->>> pZ_mu_orth = results['pZ_mu_orth']
->>> pZ_mu = results['pZ_mu']
->>> gpfa.variance_explained()
-(0.98518..., array([9.85162126e-01, 1.32456401e-05, 7.66699002e-06]))
+This example illustrates the application of GPFA to data analysis by encompassing synthetic data generation, GPFA model fitting, and latent variable extraction. It emphasizes a step-by-step explanation of utilizing GPFA for data analysis, highlighting key functionalities of the library.
+
+.. code-block:: python
+
+   import numpy as np
+   from gpfa import GPFA
+   from sklearn.gaussian_process import GaussianProcessRegressor
+   from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
+
+   # Simulation parameters
+   rng_seeds = [0, 42]
+   z_dim = 2
+   x_dim = 10
+   tau_f = 0.6
+   sigma_n = 0.001
+   sigma_f = 1 - sigma_n
+   bin_size = 0.05  # [s]
+   num_obs = len(rng_seeds)
+   T_per_obs = 400 
+   kernel = ConstantKernel(sigma_f, constant_value_bounds='fixed') * RBF(length_scale=tau_f) + \
+         ConstantKernel(sigma_n, constant_value_bounds='fixed') * WhiteKernel(noise_level=1, noise_level_bounds='fixed')
+
+   tsdt = np.arange(0, T_per_obs) * bin_size
+
+   np.random.seed(2)
+   C = np.random.uniform(0, 2, (x_dim, z_dim))     # loading matrix
+   sqrtR = np.random.uniform(0, 0.5, x_dim)
+
+   # Generate latent and observation sequences in line with GPFA model
+   X = []
+   Z = []
+   for n in range(num_obs):
+      np.random.seed(rng_seeds[n])
+
+      # Sample latent sequence according to GPFA latent time-course model
+      gp_model = GaussianProcessRegressor(kernel=kernel)
+      
+      z = gp_model.sample_y(tsdt[:, np.newaxis], n_samples=z_dim, random_state=rng_seeds[n]).T
+      Z.append(z)
+      # Sample observations according to GPFA emission model
+      x = C @ z + np.random.normal(0, sqrtR[:, np.newaxis] , (x_dim, T_per_obs))
+      X.append(x)
+
+   gpfa = GPFA(bin_size=bin_size, z_dim=z_dim, em_tol=1e-3, verbose=True)
+   gpfa.fit(X)  # this will take a while
+
+   results = gpfa.predict(returned_data=['Z_mu_orth', 'Z_mu'])
+
+   print(gpfa.variance_explained())
+
+.. code-block:: console
+
+   Initializing parameters using factor analysis...
+
+   Fitting GPFA model...
+   Fitting has converged after 135 EM iterations.
+   (0.9834339959622203, array([0.80069798, 0.18273602]))
+
+Note that, due to differences in the linear algebra packages used on different machine architectures and operating systems, the above results might differ across machines.
+
+Let us now visualize the true orthogonalized latents against the inferred orthogonalized latents.
+
+.. code-block:: python
+
+   import matplotlib as mpl
+   import matplotlib.pyplot as plt
+   mpl.rcParams.update({'font.size': 20})
+   mpl.rcParams.update({'lines.linewidth': 3})
+
+   # orthogonalize true latents using inferred C
+   true_Z = Z
+   true_Z_orth = [gpfa.OrthTrans_ @ Zn for Zn in true_Z]
+
+   # Extract Z_orth and pZ_mu from results
+   Z_orth = results[0]['Z_mu_orth']
+   Z_mu = results[0]['Z_mu']
+
+   fig, axs = plt.subplots(2, 1, figsize=(13, 13))
+
+   # plot first (orthonormalized) latent from first sequence (flipping the sign
+   # of the inferred latent, as this is arbitrary and happens to be wrongly inferred)
+   axs[0].plot(tsdt, true_Z_orth[0][0,:], label='true $Z_{1,:}$ (orth)', c='blue')
+   axs[0].plot(tsdt, -Z_orth[0][0,:], label='inf $Z_{1,:}$ (orth)', c='orange')
+   axs[0].legend()
+   axs[0].set_title('Comparing inferred to true latents')
+   axs[0].set_ylabel('$Z_{1,:}$ from first sequence')
+
+   # plot first latent from second sequence
+   axs[1].plot(tsdt, true_Z_orth[1][0,:], label='true $Z_{1,:}$ (orth)', c='blue')
+   axs[1].plot(tsdt, -Z_orth[1][0,:], label='inf $Z_{1,:}$ (orth)', c='orange')
+   axs[1].legend()
+   axs[1].set_xlabel('time $t$')
+   axs[1].set_ylabel('$Z_{1,:}$ from second sequence')
+
+   plt.tight_layout()
+   plt.show()
+
+
+.. image:: /_static/example-2.png
+   :width: 600
+   :height: 600
+   :alt: Results Image
+   :align: center
+
+.. _examples_2:
+
+(ii) Applying GPFA to real neural Data
+--------------------------------------
+You can find a more complex example that applies GPFA to neural data used by [Even2019]_  (available at [Even2022]_) in an :doc:`neural_example`. To run this example yourself, download the :download:`Jupyter notebook containing the code <neural_example.ipynb>`.
 
 Original code
 -------------
@@ -149,6 +175,16 @@ References
     In Journal of Neurophysiology, Vol. 102, Issue 1. pp. 614-635.
     <https://doi.org/10.1152/jn.90941.2008>`_
 
+.. [Even2022] `Even-Chen, Nir and Sheffer, Blue and Vyas, Saurabh and Ryu, Stephen
+    and Shenoy, Krishna (2022)
+    "Structure and variability of delay activity in premotor cortex"
+    (Version 0.220124.2156) [Data set]. DANDI archive.
+    <https://doi.org/10.48324/dandi.000121/0.220124.2156>`_
+
+.. [Even2019] `Even-Chen, Nir and Sheffer, Blue and Vyas, Saurabh and Ryu, Stephen
+    and Shenoy, Krishna (2022)
+    "Structure and variability of delay activity in premotor cortex"
+    PLoS computational biology, 15(2), e1006808. <https://doi.org/10.1371/journal.pcbi.1006808>`_
 
 .. toctree::
     :maxdepth: 2
@@ -156,6 +192,7 @@ References
 
     gpfa_class
     preprocessing_class
+    neural_example
     installation
     contribute
     acknowledgments

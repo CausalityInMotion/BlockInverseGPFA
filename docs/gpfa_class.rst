@@ -1,6 +1,7 @@
+==========
 GPFA Class
 ==========
 
-.. currentmodule:: gpfa.gpfa
-.. autoclass:: gpfa.gpfa.GPFA
+.. currentmodule:: gpfa
+.. autoclass:: GPFA
    :members:

@@ -1,6 +1,8 @@
+=============
 Preprocessing
 =============
 
-.. automodule:: gpfa.preprocessing
+.. currentmodule:: gpfa
+.. autoclass:: EventTimesToCounts
    :members:
 

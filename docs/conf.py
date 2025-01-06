@@ -1,11 +1,14 @@
 # Configuration file for the Sphinx documentation builder.
+
+# For the full list of built-in configuration values, see the documentation:
+# https://www.sphinx-doc.org/en/master/usage/configuration.html
+
 import sys
 import os
 from datetime import date
 
+# include root path to allow autodoc to find gpfa module
 sys.path.insert(0, os.path.abspath('../'))
-# For the full list of built-in configuration values, see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 # Path to the source directory (where your .rst files are)
 sourcedir = os.path.abspath(os.path.dirname(__file__))
@@ -13,7 +16,6 @@ sourcedir = os.path.abspath(os.path.dirname(__file__))
 # Path to the build directory (where your HTML output will go)
 builddir = os.path.abspath(os.path.join(os.path.dirname(__file__), '_build'))
 
-sys.path.append(os.path.abspath('sphinxext'))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -40,6 +42,7 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
     "numpydoc",
+    "nbsphinx"
 ]
 
 # Required to automatically create a summary page for each function listed in
@@ -72,9 +75,7 @@ html_theme = 'sphinx_rtd_theme'
 
 html_static_path = ['_static']
 
-html_theme_options = {
-    'analytics_id': 'UA-12345678-9',
-}
+html_theme_options = {}
 
 autodoc_member_order = ['groupwise']
 
