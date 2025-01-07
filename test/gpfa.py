@@ -155,7 +155,7 @@ class TestGPFA(unittest.TestCase):
         self.gpfa_with_multi_params_kernel.fit(self.X)
         self.gpfa_with_seq_kernel.fit(self.X)
         self.results, _ = self.gpfa.predict(
-                                returned_data=['pZ_mu', 'pZ_mu_orth'])
+                                returned_data=['Z_mu', 'Z_mu_orth'])
 
         # get latents sequence and data log_likelihood
         self.latent_seqs, self.ll = self.gpfa._infer_latents(self.X)
@@ -180,7 +180,7 @@ class TestGPFA(unittest.TestCase):
             GPFA mean and cov
         """
         test_latent_seqs = np.empty(
-            len(self.X), dtype=[('pZ_mu', object), ('pZ_cov', object)])
+            len(self.X), dtype=[('Z_mu', object), ('Z_cov', object)])
 
         for n, t in enumerate(self.T):
             # get the kernal as defined in GPFA
@@ -203,7 +203,7 @@ class TestGPFA(unittest.TestCase):
             c_rinv_c_big = linalg.block_diag(*blah)  # (x_dim*T) x (x_dim*T)
 
             # (K_inv + C'R_invC)^-1 * C'R_inv * (y - d)
-            test_latent_seqs[n]['pZ_mu'] = linalg.inv(
+            test_latent_seqs[n]['Z_mu'] = linalg.inv(
                 k_big_inv + c_rinv_c_big).dot(term1_mat).reshape(
                     (self.z_dim, t), order='F')
 
@@ -215,7 +215,7 @@ class TestGPFA(unittest.TestCase):
                     k_big_inv + c_rinv_c_big)[
                         idx[i]:idx[i + 1], idx[i]:idx[i + 1]]
 
-            test_latent_seqs[n]['pZ_cov'] = cov
+            test_latent_seqs[n]['Z_cov'] = cov
             return test_latent_seqs
 
     def test_infer_latents(self):
@@ -232,23 +232,23 @@ class TestGPFA(unittest.TestCase):
         )
         # Assert
         self.assertTrue(np.allclose(
-                self.latent_seqs['pZ_mu'][0],
-                test_latent_seqs_gpfa['pZ_mu'][0]))
+                self.latent_seqs['Z_mu'][0],
+                test_latent_seqs_gpfa['Z_mu'][0]))
         self.assertTrue(np.allclose(
-                self.latent_seqs['pZ_cov'][0],
-                test_latent_seqs_gpfa['pZ_cov'][0]))
+                self.latent_seqs['Z_cov'][0],
+                test_latent_seqs_gpfa['Z_cov'][0]))
         self.assertTrue(np.allclose(
-                self.latent_seqs_seqkernel['pZ_mu'][0],
-                test_latent_seqs_seq_kern['pZ_mu'][0]))
+                self.latent_seqs_seqkernel['Z_mu'][0],
+                test_latent_seqs_seq_kern['Z_mu'][0]))
         self.assertTrue(np.allclose(
-                self.latent_seqs_seqkernel['pZ_cov'][0],
-                test_latent_seqs_seq_kern['pZ_cov'][0]))
+                self.latent_seqs_seqkernel['Z_cov'][0],
+                test_latent_seqs_seq_kern['Z_cov'][0]))
         self.assertTrue(np.allclose(
-                self.latent_seqs_multiparamskern['pZ_mu'][0],
-                test_latent_seqs_multiparams['pZ_mu'][0]))
+                self.latent_seqs_multiparamskern['Z_mu'][0],
+                test_latent_seqs_multiparams['Z_mu'][0]))
         self.assertTrue(np.allclose(
-                self.latent_seqs_multiparamskern['pZ_cov'][0],
-                test_latent_seqs_multiparams['pZ_cov'][0]))
+                self.latent_seqs_multiparamskern['Z_cov'][0],
+                test_latent_seqs_multiparams['Z_cov'][0]))
 
     def test_data_loglikelihood(self):
         """
@@ -273,11 +273,11 @@ class TestGPFA(unittest.TestCase):
         """
         Test GPFA orthonormalization functions applied in `gpfa.predict`.
         """
-        pZ_mu = self.results['pZ_mu'][0]
-        pZ_mu_orth = self.results['pZ_mu_orth'][0]
-        test_pZ_mu_orth = np.dot(self.gpfa.OrthTrans_, pZ_mu)
+        Z_mu = self.results['Z_mu'][0]
+        Z_mu_orth = self.results['Z_mu_orth'][0]
+        test_Z_mu_orth = np.dot(self.gpfa.OrthTrans_, Z_mu)
         # Assert
-        self.assertTrue(np.allclose(pZ_mu_orth, test_pZ_mu_orth))
+        self.assertTrue(np.allclose(Z_mu_orth, test_Z_mu_orth))
 
     def test_variance_explained(self):
         """
