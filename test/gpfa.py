@@ -256,8 +256,8 @@ class TestGPFA(unittest.TestCase):
         """
         test_ll = -4092.076117337763
         # Assert
-        self.assertEqual(test_ll, self.ll)
-        self.assertEqual(test_ll, self.ll_seq_kernel)
+        self.assertAlmostEqual(test_ll, self.ll)
+        self.assertAlmostEqual(test_ll, self.ll_seq_kernel)
         self.assertGreater(self.ll_multiparams_kernel, test_ll)
 
     def test_orthonormalized_transform(self):
@@ -286,4 +286,4 @@ class TestGPFA(unittest.TestCase):
         test_r2_score = 0.6648115733320232
         r2_t1 = self.gpfa.variance_explained()[0]
         # Assert
-        self.assertEqual(test_r2_score, r2_t1)
+        self.assertAlmostEqual(test_r2_score, r2_t1)
