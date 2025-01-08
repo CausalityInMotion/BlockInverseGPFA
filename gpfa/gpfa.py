@@ -606,7 +606,7 @@ class GPFA(sklearn.base.BaseEstimator):
                 - Corth2 * np.sum(Z_mu_orth[i] ** 2, axis=1)
 
         latent_R2s = SSreg / SStot
-        R2 = np.sum(latent_R2s)
+        R2 = float(np.sum(latent_R2s))
         return R2, latent_R2s
 
     def _em(self, X):
