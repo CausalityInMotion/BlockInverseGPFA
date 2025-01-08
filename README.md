@@ -33,21 +33,26 @@ Building the documentation requires the following packages:
 
  - [Sphinx](http://www.sphinx-doc.org)
  - [Read the Docs Sphinx Theme](https://sphinx-rtd-theme.readthedocs.io/en/stable/)
-
-Install the required packages using pip:
-
+ - [numpydoc](https://numpydoc.readthedocs.io/)
+ - [Jupyter Notebook Tools for Sphinx](https://nbsphinx.readthedocs.io/)
+ 
+You can install the required packages either using the `docs/requirements.txt` file,
 ```bash
-$ pip install sphinx
-$ pip install sphinx-rtd-theme
+$ pip install -r docs/requirements.txt
+```
+or manually by calling
+```bash
+$ pip install sphinx sphinx-rtd-theme numpydoc nbsphinx
 ```
 
-Finally, to view the documentation.
+Finally, to view the documentation, run
 
 ```bash
 $ cd docs
 $ make html
 $ open _build/html/index.html
 ```
+
 -----------
 ### Tests
 -----------
