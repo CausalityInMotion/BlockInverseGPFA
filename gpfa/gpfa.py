@@ -90,9 +90,11 @@ class GPFA(sklearn.base.BaseEstimator):
     freq_ll : int, optional, default=5
         Frequency with which data likelihood is updated across EM iterations.
 
-    verbose : bool, optional, default=False
-        Determines whether to display status messages.
-
+    verbose : int, optional, default=0
+        Determines whether to display status messages when calling :meth:`fit`.
+        - verbose <= 0: no output
+        - verbose >= 1: output of EM iteration statistics
+        - verbose >= 2: additional fitting information.
 
     Attributes
     ----------
@@ -246,7 +248,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
     def __init__(self, bin_size=0.02, gp_kernel=None, z_dim=3,
                  min_var_frac=0.01, em_tol=1.0E-5, em_max_iters=500,
-                 freq_ll=5, verbose=False):
+                 freq_ll=5, verbose=0):
         self.bin_size = bin_size
         self.z_dim = z_dim
         self.gp_kernel = gp_kernel
@@ -364,6 +366,8 @@ class GPFA(sklearn.base.BaseEstimator):
         X_in = X
         if use_cut_trials:
             # For compute efficiency, train on shorter segments of trials
+            if self.verbose >= 2:
+                print('Cutting trials to all have the same length')
             X_in = self._cut_trials(X_in)
             if len(X_in) == 0:
                 warnings.warn('No segments extracted for training. Defaulting '
@@ -382,15 +386,16 @@ class GPFA(sklearn.base.BaseEstimator):
                       'repeated units, not enough observations.'
             raise ValueError(errmesg)
 
-        if self.verbose:
+        if self.verbose >= 2:
             print(f'Number of training trials: {len(X_in)}')
             print(f'Latent space dimensionality: {self.z_dim}')
-            print(f'Observation dimensionality: {X_all.any(axis=1).sum()}')
+            print(f'Observation dimensionality: {x_dim}')
 
         # ========================================
         # Initialize observation model parameters
         # ========================================
-        print('Initializing parameters using factor analysis...')
+        if self.verbose >= 2:
+            print('Initializing parameters using factor analysis')
 
         fa = FactorAnalysis(
                         n_components=self.z_dim, copy=True,
@@ -410,7 +415,8 @@ class GPFA(sklearn.base.BaseEstimator):
         # =====================
         # Fit model parameters
         # =====================
-        print('\nFitting GPFA model...')
+        if self.verbose >= 2:
+            print('Fitting GP parameters by EM')
 
         self.train_latent_seqs_ = self._em(X_in)
         # If `use_cut_trials=True` re-compute the latent sequence on a full
@@ -636,7 +642,7 @@ class GPFA(sklearn.base.BaseEstimator):
                 variable
         """
         lls = []
-        ll_old = ll_base = ll = 0.0
+        ll_prev = ll_base = ll = 0.0
         iter_time = []
         var_floor = self.min_var_frac * np.diag(np.cov(np.hstack(X)))
         Tall = np.array([X_n.shape[1] for X_n in X])
@@ -658,91 +664,98 @@ class GPFA(sklearn.base.BaseEstimator):
             precomp['Tu'][j]['PautoSUM'] = np.zeros(
                 (self.z_dim, precomp['Tu'][j]['T'], precomp['Tu'][j]['T']))
 
-        # Loop once for each iteration of EM algorithm
-        for iter_id in trange(1, self.em_max_iters + 1, desc='EM iteration',
-                              disable=not self.verbose):
+        # Loop over EM algorothm iterations
+        with trange(self.em_max_iters, desc='EM iteration   ', total=np.inf,
+                    disable=(self.verbose <= 0)) as t:
+            for iter_id in t:
+                tic = time.time()
 
-            if self.verbose:
-                print()
-            tic = time.time()
-            get_ll = (np.fmod(iter_id, self.freq_ll) == 0) or (iter_id <= 2)
+                # ==== E STEP =====
+                if not np.isnan(ll):
+                    ll_prev = ll
+                # recompute llh every freq_ll iterations (and in first 2)
+                get_ll = ((iter_id + 1) % self.freq_ll == 0) or (iter_id <= 1)
+                if get_ll:
+                    latent_seqs, ll = self._infer_latents(X)
+                else:
+                    latent_seqs = self._infer_latents(X, get_ll=False)
+                    ll = np.nan
+                lls.append(ll)
+                if iter_id <= 1:
+                    ll_base = ll  # set baseline in first two iterations
+                    t.set_postfix(llh=ll, delta_llh=0.0)
 
-            # ==== E STEP =====
-            if not np.isnan(ll):
-                ll_old = ll
-            if get_ll:
-                latent_seqs, ll = self._infer_latents(X)
-            else:
-                latent_seqs = self._infer_latents(X, get_ll=False)
-                ll = np.nan
-            lls.append(ll)
+                # ==== M STEP ====
+                sum_p_auto = np.zeros((self.z_dim, self.z_dim))
+                for seq_latent in latent_seqs:
+                    sum_p_auto += seq_latent['Z_cov'].sum(axis=2) \
+                        + seq_latent['Z_mu'].dot(seq_latent['Z_mu'].T)
+                X_all = np.hstack(X)
+                Z_all = np.hstack(latent_seqs['Z_mu'])
+                sum_XZtrans = X_all.dot(Z_all.T)
+                sum_Zall = Z_all.sum(axis=1)[:, np.newaxis]
+                sum_Xall = X_all.sum(axis=1)[:, np.newaxis]
 
-            # ==== M STEP ====
-            sum_p_auto = np.zeros((self.z_dim, self.z_dim))
-            for seq_latent in latent_seqs:
-                sum_p_auto += seq_latent['Z_cov'].sum(axis=2) \
-                    + seq_latent['Z_mu'].dot(
-                    seq_latent['Z_mu'].T)
-            X_all = np.hstack(X)
-            Z_all = np.hstack(latent_seqs['Z_mu'])
-            sum_XZtrans = X_all.dot(Z_all.T)
-            sum_Zall = Z_all.sum(axis=1)[:, np.newaxis]
-            sum_Xall = X_all.sum(axis=1)[:, np.newaxis]
-
-            # term is (z_dim+1) x (z_dim+1)
-            term = np.vstack(
+                # term is (z_dim+1) x (z_dim+1)
+                term = np.vstack(
                     [np.hstack([sum_p_auto, sum_Zall]),
                      np.hstack([sum_Zall.T, Tall.sum().reshape((1, 1))])]
                     )
-            # x_dim x (z_dim+1)
-            cd = np.linalg.solve(
-                term.T, np.hstack([sum_XZtrans, sum_Xall]).T).T
+                # x_dim x (z_dim+1)
+                cd = np.linalg.solve(
+                    term.T, np.hstack([sum_XZtrans, sum_Xall]).T).T
 
-            self.C_ = cd[:, :self.z_dim]
-            self.d_ = cd[:, -1]
+                self.C_ = cd[:, :self.z_dim]
+                self.d_ = cd[:, -1]
 
-            # xd must be based on the new d
-            # xd = X * d
-            # R = (X * X.T - 2 * xd * (
-            #   (sum_XZtrans - d.dot(sum_Zall.T)) * c).sum(axis=1)
-            #   ) * Tall.sum()
-            c = self.C_
-            d = self.d_[:, np.newaxis]
-            if self.notes_['RforceDiagonal']:
-                sum_XXtrans = (X_all * X_all).sum(axis=1)[:, np.newaxis]
-                xd = sum_Xall * d
-                term = ((sum_XZtrans - d.dot(sum_Zall.T)) * c).sum(axis=1)
-                term = term[:, np.newaxis]
-                r = d ** 2 + (sum_XXtrans - 2 * xd - term) / Tall.sum()
+                # xd must be based on the new d
+                # xd = X * d
+                # R = (X * X.T - 2 * xd * (
+                #   (sum_XZtrans - d.dot(sum_Zall.T)) * c).sum(axis=1)
+                #   ) * Tall.sum()
+                c = self.C_
+                d = self.d_[:, np.newaxis]
+                if self.notes_['RforceDiagonal']:
+                    sum_XXtrans = (X_all * X_all).sum(axis=1)[:, np.newaxis]
+                    xd = sum_Xall * d
+                    term = ((sum_XZtrans - d.dot(sum_Zall.T)) * c).sum(axis=1)
+                    term = term[:, np.newaxis]
+                    r = d ** 2 + (sum_XXtrans - 2 * xd - term) / Tall.sum()
 
-                # Set minimum private variance
-                r = np.maximum(var_floor, r)
-                self.R_ = np.diag(r[:, 0])
+                    # Set minimum private variance
+                    r = np.maximum(var_floor, r)
+                    self.R_ = np.diag(r[:, 0])
+                else:
+                    sum_XXtrans = X_all.dot(X_all.T)
+                    xd = sum_Xall.dot(d.T)
+                    term = (sum_XZtrans - d.dot(sum_Zall.T)).dot(c.T)
+                    r = d.dot(d.T) + (sum_XXtrans - xd - xd.T - term) / Tall.sum()
+
+                    self.R_ = (r + r.T) / 2  # ensure symmetry
+
+                if self.notes_['learnKernelParams']:
+                    self._learn_gp_params(latent_seqs, precomp)
+
+                t_end = time.time() - tic
+                iter_time.append(t_end)
+
+                # Verify that likelihood is growing monotonically
+                if iter_id > 1 and not np.isnan(ll):
+                    delta_ll = np.inf if ll_prev == ll_base \
+                                      else (ll - ll_prev) / (ll_prev - ll_base)
+                    t.set_postfix(llh=ll, delta_llh=delta_ll)
+                    if ll < ll_prev:
+                        if self.verbose >= 2:
+                            t.write(f'Error: Data likelihood has decreased'
+                                    f'from {ll_prev} to {ll}')
+                    elif delta_ll < self.em_tol:
+                        break
+
+        if self.verbose >= 2:
+            if len(lls) < self.em_max_iters:
+                print(f'Fitting has converged after {len(lls)} EM iterations')
             else:
-                sum_XXtrans = X_all.dot(X_all.T)
-                xd = sum_Xall.dot(d.T)
-                term = (sum_XZtrans - d.dot(sum_Zall.T)).dot(c.T)
-                r = d.dot(d.T) + (sum_XXtrans - xd - xd.T - term) / Tall.sum()
-
-                self.R_ = (r + r.T) / 2  # ensure symmetry
-
-            if self.notes_['learnKernelParams']:
-                self._learn_gp_params(latent_seqs, precomp)
-
-            t_end = time.time() - tic
-            iter_time.append(t_end)
-
-            # Verify that likelihood is growing monotonically
-            if iter_id <= 2:
-                ll_base = ll
-            elif self.verbose and ll < ll_old:
-                print('\nError: Data likelihood has decreased ',
-                      f'from {ll_old} to {ll}')
-            elif (ll - ll_base) < (1 + self.em_tol) * (ll_old - ll_base):
-                break
-
-        if len(lls) < self.em_max_iters:
-            print(f'Fitting has converged after {len(lls)} EM iterations.')
+                print('Maximum number of EM iterations reached')
 
         if np.any(np.diag(self.R_) == var_floor):
             warnings.warn('Private variance floor used for one or more '
@@ -910,7 +923,8 @@ class GPFA(sklearn.base.BaseEstimator):
         precomp = self._fill_p_auto_sum(latent_seqs, precomp)
 
         # Loop once for each state dimension (each GP)
-        for i in range(self.z_dim):
+        for i in trange(self.z_dim, desc='fitting latents', leave=False,
+                        disable=(self.verbose <= 0)):
             gp_kernel_i = self.gp_kernel[i]
             init_theta = self.gp_kernel[i].theta
             res_opt = optimize.minimize(
@@ -924,8 +938,6 @@ class GPFA(sklearn.base.BaseEstimator):
 
             for j in range(len(precomp['Tu'])):
                 precomp['Tu'][j]['PautoSUM'][i, :, :].fill(0)
-            if self.verbose:
-                print(f'\n Converged theta; z_dim:{i}, theta:{res_opt.x}')
 
     def _orthonormalize(self, seqs):
         """
