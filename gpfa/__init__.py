@@ -4,12 +4,11 @@
 """
 from .gpfa import GPFA
 from .preprocessing import EventTimesToCounts
-from .gpfa_inv_persymm import GpfaInvPerSymmetric
-from .gpfa_non_incremental_inv import GpfaWithoutBlockInv
+from .gpfa_non_incremental_inv import GPFAInvPerSymm, GPFANonInc
 
 __all__ = [
     "GPFA",
     "EventTimesToCounts",
-    "GpfaInvPerSymmetric",
-    "GpfaWithoutBlockInv"
+    "GPFAInvPerSymm",
+    "GPFANonInc"
 ]
