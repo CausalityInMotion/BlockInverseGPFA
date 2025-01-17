@@ -21,6 +21,7 @@ from sklearn.decomposition import FactorAnalysis
 from sklearn.gaussian_process.kernels import Kernel
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 from sklearn.gaussian_process.kernels import ConstantKernel
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 __all__ = [
     "GPFA"
@@ -922,22 +923,37 @@ class GPFA(sklearn.base.BaseEstimator):
         """
         precomp = self._fill_p_auto_sum(latent_seqs, precomp)
 
-        # Loop once for each state dimension (each GP)
-        for i in trange(self.z_dim, desc='fitting latents', leave=False,
-                        disable=(self.verbose <= 0)):
+        def _optimize_gp(i):
+            """Optimize GP kernel parameters for a single dimension."""
             gp_kernel_i = self.gp_kernel[i]
-            init_theta = self.gp_kernel[i].theta
+            init_theta = gp_kernel_i.theta
             res_opt = optimize.minimize(
-                        self._grad_bet_theta,
-                        init_theta,
-                        args=(gp_kernel_i, precomp, i),
-                        method='L-BFGS-B',
-                        jac=True
-                        )
+                self._grad_bet_theta,
+                init_theta,
+                args=(gp_kernel_i, precomp, i),
+                method='L-BFGS-B',
+                jac=True
+            )
             self.gp_kernel[i].theta = res_opt.x
 
             for j in range(len(precomp['Tu'])):
                 precomp['Tu'][j]['PautoSUM'][i, :, :].fill(0)
+
+        # Parallelize the optimization across dimensions
+        with ThreadPoolExecutor(max_workers=min(8, self.z_dim)) as executor:
+            futures = [executor.submit(_optimize_gp, i) for i in range(self.z_dim)]
+
+            # Use a progress bar that updates as tasks complete
+            with trange(self.z_dim, desc='fitting latents', leave=False,
+                        disable=(self.verbose <= 0)) as pbar:
+                for future in as_completed(futures):
+                    try:
+                        # Ensure any exception within the thread is raised
+                        future.result()
+                    except Exception as e:
+                        print(f"Error optimizing GP for dimension: {e}")
+                    finally:
+                        pbar.update(1)
 
     def _orthonormalize(self, seqs):
         """
