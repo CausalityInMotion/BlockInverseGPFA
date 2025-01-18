@@ -947,9 +947,6 @@ class GPFA(sklearn.base.BaseEstimator):
             )
             self.gp_kernel[i].theta = res_opt.x
 
-            for j in range(len(precomp['Tu'])):
-                precomp['Tu'][j]['PautoSUM'][i, :, :].fill(0)
-
         # Parallelize the optimization across dimensions
         with ThreadPoolExecutor(
             max_workers=min(self.max_workers, self.z_dim)
@@ -965,8 +962,12 @@ class GPFA(sklearn.base.BaseEstimator):
                         future.result()
                     except Exception as e:
                         print(f"Error optimizing GP for dimension: {e}")
+                        raise
                     finally:
                         pbar.update(1)
+
+        for j in range(len(precomp['Tu'])):
+            precomp['Tu'][j]['PautoSUM'][:, :, :].fill(0)
 
     def _orthonormalize(self, seqs):
         """
