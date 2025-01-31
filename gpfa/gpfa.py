@@ -22,7 +22,7 @@ from sklearn.decomposition import FactorAnalysis
 from sklearn.gaussian_process.kernels import Kernel
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 from sklearn.gaussian_process.kernels import ConstantKernel
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 __all__ = [
     "GPFA"
@@ -948,8 +948,8 @@ class GPFA(sklearn.base.BaseEstimator):
             self.gp_kernel[i].theta = res_opt.x
 
         # Parallelize the optimization across dimensions
-        with ThreadPoolExecutor(
-            max_workers=min(self.max_workers, self.z_dim)
+        with ProcessPoolExecutor(
+                max_workers=min(self.max_workers, self.z_dim)
             ) as executor:
             futures = [executor.submit(_optimize_gp, i) for i in range(self.z_dim)]
 
