@@ -1,6 +1,7 @@
 import numpy as np
 import timeit
 import time
+from scipy.stats import sem
 from gpfa import GPFA, GPFANonInc, GPFAInvPerSymm
 from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -85,22 +86,32 @@ def patch_gpfa_methods(em_timer, infer_latents_timer):
 # Profiling functions
 def profile_model_fit(
         model_cls, model_name, num_runs, X, bin_size, z_dim, em_timer, infer_latents_timer
-        ):
-    """Profile the fit method of a given GPFA model class."""
+    ):
+    """Profile the fit, _em and _infer_latents methods of a given GPFA model class."""
+    
     def model_fit():
         model = model_cls(bin_size=bin_size, z_dim=z_dim, em_tol=1e-3, verbose=2)
         model.fit(X)
 
-    # Profile overall fit runtime
-    runtime = timeit.timeit("model_fit()", globals=locals(), number=num_runs)
-    print(f"\n{model_name} average runtime: {runtime / num_runs:.4f} seconds\n")
+    # Collect individual runtimes
+    runtimes = [timeit.timeit(model_fit, number=1) for _ in range(num_runs)]
 
-    # Print average sub-method runtimes
-    avg_em_runtime = sum(em_timer.times) / len(em_timer.times)
-    avg_infer_latents_runtime = sum(infer_latents_timer.times) / len(infer_latents_timer.times)
+    # Compute mean and SEM
+    avg_runtime = np.mean(runtimes)
+    sem_runtime = sem(runtimes) if len(runtimes) > 1 else 0
 
-    print(f"{model_name} average _em runtime: {avg_em_runtime:.4f} seconds\n")
-    print(f"{model_name} average _infer_latents runtime: {avg_infer_latents_runtime:.4f} seconds\n")
+    print(f"\n{model_name} fit average runtime: {avg_runtime:.4f} ± {sem_runtime:.4f} seconds\n")
+
+    # Compute mean and SEM for _em method
+    avg_em_runtime = np.mean(em_timer.times)
+    sem_em_runtime = sem(em_timer.times) if len(em_timer.times) > 1 else 0
+
+    # Compute mean and SEM for _infer_latents method
+    avg_infer_latents_runtime = np.mean(infer_latents_timer.times)
+    sem_infer_latents_runtime = sem(infer_latents_timer.times) if len(infer_latents_timer.times) > 1 else 0
+
+    print(f"{model_name} average _em runtime: {avg_em_runtime:.4f} ± {sem_em_runtime:.4f} seconds\n")
+    print(f"{model_name} average _infer_latents runtime: {avg_infer_latents_runtime:.4f} ± {sem_infer_latents_runtime:.4f} seconds\n")
 
     # Reset timers for the next model
     em_timer.reset()
