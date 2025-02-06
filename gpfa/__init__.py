@@ -5,10 +5,13 @@
 from .gpfa import GPFA
 from .preprocessing import EventTimesToCounts
 from .gpfa_non_incremental_inv import GPFAInvPerSymm, GPFANonInc
+from .gpfa_non_parallelized import GPFAInvPerSymmPar, GPFANonIncPar
 
 __all__ = [
     "GPFA",
     "EventTimesToCounts",
     "GPFAInvPerSymm",
-    "GPFANonInc"
+    "GPFANonInc",
+    "GPFAInvPerSymmPar",
+    "GPFANonIncPar"
 ]
