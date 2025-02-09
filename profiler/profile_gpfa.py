@@ -1,11 +1,19 @@
-import numpy as np
 import timeit
 import time
 import json
+import hashlib
+import numpy as np
 from scipy.stats import sem
-from gpfa import GPFA, GPFANonInc, GPFAInvPerSymm, GPFAInvPerSymmPar, GPFANonIncPar
 from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
 from sklearn.gaussian_process import GaussianProcessRegressor
+from gpfa import (
+    GPFA,
+    GPFASerialBlockInv,
+    GPFASerialLinalgInv,
+    GPFASerialPersymInv,
+    GPFAThreadedLinalgInv,
+    GPFAThreadedPersymInv
+    )
 
 
 class GPFAExperiment:
@@ -22,10 +30,10 @@ class GPFAExperiment:
         self.sigma_f = 1 - sigma_n
         self.bin_size = bin_size
         self.T_per_obs = T_per_obs
-        
+
         # Validate parameters
         if len(self.T_per_obs) != len(self.rng_seeds):
-            raise ValueError("T_per_obs must match the number of rng_seeds.")
+            raise ValueError(f"T_per_obs must match the number of rng_seeds.")
 
         # Kernel setup
         self.kernel = (
@@ -79,7 +87,9 @@ class Timer:
 # Patch methods for profiling
 def patch_gpfa_methods(em_timer, infer_latents_timer):
     """Patch GPFA and its variants to include profiling."""
-    for cls in [GPFA, GPFANonInc, GPFANonIncPar, GPFAInvPerSymm, GPFAInvPerSymmPar]:
+    for cls in [GPFA,  GPFASerialBlockInv,
+                GPFASerialLinalgInv, GPFASerialPersymInv,
+                GPFAThreadedLinalgInv, GPFAThreadedPersymInv]:
         cls._em = em_timer(cls._em)
         cls._infer_latents = infer_latents_timer(cls._infer_latents)
 
@@ -89,7 +99,7 @@ def profile_model_fit(
         model_cls, model_name, num_runs, X, bin_size, z_dim, em_timer, infer_latents_timer
         ):
     """Profile the fit, _em and _infer_latents methods of a given GPFA model class."""
-    
+
     def model_fit():
         model = model_cls(bin_size=bin_size, z_dim=z_dim, em_tol=1e-3, verbose=2)
         model.fit(X)
@@ -134,23 +144,34 @@ def profile_model_fit(
 if __name__ == "__main__":
     # List of varying T_per_obs
     T_per_obs_list = [
-        [500, 500, 500, 500], [490, 490, 510, 510], [480, 480, 520, 520],
-        [470, 470, 530, 530], [460, 460, 540, 540], [450, 450, 550, 550],
-        [440, 440, 560, 560], [430, 430, 570, 570], [420, 420, 580, 580],
-        [410, 410, 590, 590], [400, 400, 600, 600]
+        [500, 500, 500, 500, 500, 500, 500, 500, 500, 500],
+        [495, 495, 495, 495, 495, 505, 505, 505, 505, 505],
+        [490, 490, 490, 490, 500, 500, 500, 510, 510, 510],
+        [485, 485, 485, 495, 495, 495, 505, 505, 515, 515],
+        [480, 480, 490, 490, 500, 500, 510, 510, 520, 520],
+        [475, 475, 485, 485, 495, 495, 505, 505, 515, 525],
+        [470, 470, 480, 480, 490, 490, 500, 510, 520, 530],
+        [465, 465, 475, 475, 485, 495, 505, 515, 525, 535],
+        [460, 460, 470, 480, 490, 500, 510, 520, 530, 540],
+        [455, 465, 475, 485, 495, 505, 515, 525, 535, 545],
+        [450, 460, 470, 480, 490, 500, 510, 520, 530, 540]
     ]
+    # Create a corresponding list of random seeds.
+    np.random.seed(42)
+    rng_seeds = np.random.choice(range(1, 1000), size=10, replace=False).tolist()
 
     # Number of times to run the experiment per condition
-    num_runs = 5
+    num_runs = 1
 
     # Dictionary to store results
     results = {}
 
     for T_per_obs in T_per_obs_list:
+
         print(f"\nRunning experiment for T_per_obs={T_per_obs}\n")
 
         # Initialize experiment with the current T_per_obs
-        exp = GPFAExperiment(T_per_obs=T_per_obs)
+        exp = GPFAExperiment(rng_seeds=rng_seeds, T_per_obs=T_per_obs)
 
         # Generate data
         X = exp.generate_data()
@@ -169,29 +190,33 @@ if __name__ == "__main__":
                 exp.z_dim, em_timer, infer_latents_timer
                 ),
             "GPFA_Threaded_LinalgInv": profile_model_fit(
-                GPFANonInc, "GPFANonInc", num_runs, X,
-                exp.bin_size, exp.z_dim, em_timer,
-                infer_latents_timer
-                ),
-            "GPFA_Serial_LinalgInv": profile_model_fit(
-                GPFANonIncPar, "GPFANonIncPar", num_runs, X,
-                exp.bin_size, exp.z_dim, em_timer,
+                GPFAThreadedLinalgInv, "GPFA_Threaded_LinalgInv",
+                num_runs, X, exp.bin_size, exp.z_dim, em_timer,
                 infer_latents_timer
                 ),
             "GPFA_Threaded_PersymInv": profile_model_fit(
-                GPFAInvPerSymm, "GPFAInvPerSymm", num_runs,
-                X, exp.bin_size, exp.z_dim, em_timer,
+                GPFAThreadedPersymInv, "GPFA_Threaded_PersymInv",
+                num_runs, X, exp.bin_size, exp.z_dim, em_timer,
+                infer_latents_timer
+                ),
+            "GPFA_Serial_BlockInv": profile_model_fit(
+                GPFASerialBlockInv, "GPFA_Serial_BlockInv",
+                num_runs, X, exp.bin_size, exp.z_dim, em_timer,
+                infer_latents_timer
+                ),
+            "GPFA_Serial_LinalgInv": profile_model_fit(
+                GPFASerialLinalgInv, "GPFA_Serial_LinalgInv",
+                num_runs, X, exp.bin_size, exp.z_dim, em_timer,
                 infer_latents_timer
                 ),
             "GPFA_Serial_PersymInv": profile_model_fit(
-                GPFAInvPerSymmPar, "GPFAInvPerSymmPar",
-                num_runs, X, exp.bin_size, exp.z_dim, 
-                em_timer, infer_latents_timer
-                ),
+                GPFASerialPersymInv, "GPFA_Serial_PersymInv",
+                num_runs, X, exp.bin_size, exp.z_dim, em_timer,
+                infer_latents_timer
+                )
         }
 
-    # Save results to a JSON file for further analysis
-    with open("gpfa_profiling_results.json", "w") as f:
+    with open("gpfa_profiling_results.json", "w", encoding="utf-8") as f:
         json.dump(results, f, indent=4)
 
     print("\nAll experiments completed! Results saved to gpfa_profiling_results.json\n")

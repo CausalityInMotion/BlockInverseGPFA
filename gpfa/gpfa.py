@@ -758,7 +758,7 @@ class GPFA(sklearn.base.BaseEstimator):
                     t.set_postfix(llh=ll, delta_llh=delta_ll)
                     if ll < ll_prev:
                         if self.verbose >= 2:
-                            t.write(f'Error: Data likelihood has decreased'
+                            t.write(f'Error: Data likelihood has decreased '
                                     f'from {ll_prev} to {ll}')
                     elif delta_ll < self.em_tol:
                         break

@@ -4,14 +4,16 @@
 """
 from .gpfa import GPFA
 from .preprocessing import EventTimesToCounts
-from .gpfa_non_incremental_inv import GPFAInvPerSymm, GPFANonInc
-from .gpfa_non_parallelized import GPFAInvPerSymmPar, GPFANonIncPar
+from .gpfa_variants import (GPFASerialBlockInv, GPFASerialLinalgInv,
+                            GPFASerialPersymInv, GPFAThreadedLinalgInv,
+                            GPFAThreadedPersymInv)
 
 __all__ = [
     "GPFA",
     "EventTimesToCounts",
-    "GPFAInvPerSymm",
-    "GPFANonInc",
-    "GPFAInvPerSymmPar",
-    "GPFANonIncPar"
+    "GPFASerialBlockInv",
+    "GPFASerialLinalgInv",
+    "GPFASerialPersymInv",
+    "GPFAThreadedLinalgInv",
+    "GPFAThreadedPersymInv"
 ]
