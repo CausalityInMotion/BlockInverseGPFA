@@ -1,7 +1,6 @@
 import timeit
 import time
 import json
-import hashlib
 import numpy as np
 from scipy.stats import sem
 from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
@@ -19,8 +18,8 @@ from gpfa import (
 class GPFAExperiment:
     """Class to manage GPFA simulation parameters and data generation."""
 
-    def __init__(self, rng_seeds=[0, 10, 42, 100], z_dim=3, x_dim=10,
-                 tau_f=0.6, sigma_n=0.001, bin_size=0.05,
+    def __init__(self, rng_seeds=[0, 10, 42, 100], z_dim=4, x_dim=10,
+                 tau_f=0.1, sigma_n=0.001, bin_size=0.06,
                  T_per_obs=[500, 500, 500, 500]):
         self.rng_seeds = rng_seeds
         self.z_dim = z_dim
@@ -38,7 +37,7 @@ class GPFAExperiment:
         # Kernel setup
         self.kernel = (
             ConstantKernel(self.sigma_f, constant_value_bounds="fixed")
-            * RBF(length_scale=self.tau_f)
+            * RBF(length_scale=max(self.tau_f, 1e-2))
             + ConstantKernel(self.sigma_n, constant_value_bounds="fixed")
             * WhiteKernel(noise_level=1, noise_level_bounds="fixed")
         )
@@ -146,25 +145,22 @@ if __name__ == "__main__":
     T_per_obs_list = [
         [500, 500, 500, 500, 500, 500, 500, 500, 500, 500],
         [495, 495, 495, 495, 495, 505, 505, 505, 505, 505],
-        [490, 490, 490, 490, 500, 500, 500, 510, 510, 510],
-        [485, 485, 485, 495, 495, 495, 505, 505, 515, 515],
+        [491, 491, 491, 491, 501, 501, 501, 511, 511, 511],
+        [487, 487, 487, 497, 497, 497, 507, 507, 517, 517],
         [480, 480, 490, 490, 500, 500, 510, 510, 520, 520],
-        [475, 475, 485, 485, 495, 495, 505, 505, 515, 525],
-        [470, 470, 480, 480, 490, 490, 500, 510, 520, 530],
-        [465, 465, 475, 475, 485, 495, 505, 515, 525, 535],
-        [460, 460, 470, 480, 490, 500, 510, 520, 530, 540],
+        [479, 479, 489, 489, 499, 499, 509, 509, 519, 529],
+        [476, 476, 486, 486, 496, 496, 506, 516, 526, 536],
+        [471, 471, 481, 481, 491, 501, 511, 521, 531, 541],
+        [464, 464, 474, 484, 494, 504, 514, 524, 534, 544],
         [455, 465, 475, 485, 495, 505, 515, 525, 535, 545],
-        [450, 460, 470, 480, 490, 500, 510, 520, 530, 540]
     ]
-    # Create a corresponding list of random seeds.
-    np.random.seed(42)
-    rng_seeds = np.random.choice(range(1, 1000), size=10, replace=False).tolist()
-
     # Number of times to run the experiment per condition
-    num_runs = 1
+    num_runs = 5
 
     # Dictionary to store results
     results = {}
+
+    rng_seeds = [0, 10, 42, 100, 0, 10, 42, 100, 0, 10]
 
     for T_per_obs in T_per_obs_list:
 
