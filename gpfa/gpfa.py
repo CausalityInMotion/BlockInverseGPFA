@@ -7,7 +7,6 @@
 
 from __future__ import division, print_function, unicode_literals
 
-import os
 import time
 import warnings
 import sklearn
@@ -76,15 +75,6 @@ class GPFA(sklearn.base.BaseEstimator):
 
     z_dim : int, optional, default=3
         Dimensionality of latent space.
-
-    max_workers : int, optional, default=None
-        Maximum number of threads to use for parallel computations during GP kernel 
-        optimization. If ``None``, defaults to the total number of CPU cores available 
-        on the system (`os.cpu_count()`).
-
-        .. note::
-            - For systems with limited resources, set this to a smaller value to 
-              avoid performance degradation.
 
     min_var_frac : float, optional, default=0.01
         Fraction of overall data variance for each observed dimension to set as
@@ -258,11 +248,10 @@ class GPFA(sklearn.base.BaseEstimator):
     """
 
     def __init__(self, bin_size=0.02, gp_kernel=None, z_dim=3,
-                 max_workers=None, min_var_frac=0.01, em_tol=1.0E-5,
+                 min_var_frac=0.01, em_tol=1.0E-5,
                  em_max_iters=500, freq_ll=5, verbose=0):
         self.bin_size = bin_size
         self.z_dim = z_dim
-        self.max_workers = max_workers if max_workers is not None else os.cpu_count()
         self.gp_kernel = gp_kernel
         self.min_var_frac = min_var_frac
         self.em_tol = em_tol
@@ -923,7 +912,6 @@ class GPFA(sklearn.base.BaseEstimator):
     def _learn_gp_params(self, latent_seqs, precomp):
         """
         Updates parameters of GP kernels, given latent trajectories.
-
         Parameters
         ----------
         latent_seqs : numpy.recarray
@@ -933,41 +921,21 @@ class GPFA(sklearn.base.BaseEstimator):
             posterior covariance
         """
         precomp = self._fill_p_auto_sum(latent_seqs, precomp)
-
-        def _optimize_gp(i):
-            """Optimize GP kernel parameters for a single dimension."""
+        # Loop once for each state dimension (each GP)
+        for i in trange(self.z_dim, desc='fitting latents ', leave=False,
+                        disable=(self.verbose <= 0)):
             gp_kernel_i = self.gp_kernel[i]
-            init_theta = gp_kernel_i.theta
+            init_theta = self.gp_kernel[i].theta
             res_opt = optimize.minimize(
-                self._grad_bet_theta,
-                init_theta,
-                args=(gp_kernel_i, precomp, i),
-                method='L-BFGS-B',
-                jac=True
-            )
+                        self._grad_bet_theta,
+                        init_theta,
+                        args=(gp_kernel_i, precomp, i),
+                        method='L-BFGS-B',
+                        jac=True
+                        )
             self.gp_kernel[i].theta = res_opt.x
-
-        # Parallelize the optimization across dimensions
-        with ThreadPoolExecutor(
-                max_workers=min(self.max_workers, self.z_dim)
-            ) as executor:
-            futures = [executor.submit(_optimize_gp, i) for i in range(self.z_dim)]
-
-            # Use a progress bar that updates as tasks complete
-            with trange(self.z_dim, desc='fitting latents', leave=False,
-                        disable=(self.verbose <= 0)) as pbar:
-                for future in as_completed(futures):
-                    try:
-                        # Ensure any exception within the thread is raised
-                        future.result()
-                    except Exception as e:
-                        print(f"Error optimizing GP for dimension: {e}")
-                        raise
-                    finally:
-                        pbar.update(1)
-
-        for j in range(len(precomp['Tu'])):
-            precomp['Tu'][j]['PautoSUM'][:, :, :].fill(0)
+            for j in range(len(precomp['Tu'])):
+                precomp['Tu'][j]['PautoSUM'][i, :, :].fill(0)
 
     def _orthonormalize(self, seqs):
         """
