@@ -9,19 +9,21 @@ from __future__ import division, print_function, unicode_literals
 
 import time
 import warnings
-import sklearn
-import scipy as sp
+
 import numpy as np
-from tqdm import trange
-from sklearn.base import clone
+import scipy as sp
 import scipy.linalg as linalg
 import scipy.optimize as optimize
-from sklearn.utils.extmath import fast_logdet
+import sklearn
+from sklearn.base import clone
 from sklearn.decomposition import FactorAnalysis
-from sklearn.gaussian_process.kernels import Kernel
-from sklearn.gaussian_process.kernels import RBF, WhiteKernel
-from sklearn.gaussian_process.kernels import ConstantKernel
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from sklearn.gaussian_process.kernels import (
+    RBF,
+    ConstantKernel,
+    Kernel,
+    WhiteKernel
+)
+from tqdm import trange
 
 __all__ = [
     "GPFA"
@@ -354,7 +356,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         4. **EM iteration**: Steps 2 and 3 are repeated until either the change
            in complete data likelihood drops below the set threshold, or if the
-           maximum number of interations is reached.
+           maximum number of interactions is reached.
 
         **Orthonormalization:** Finally, this function computes an
         orthonormalization transform to the loading matrix
@@ -839,9 +841,11 @@ class GPFA(sklearn.base.BaseEstimator):
         for t in unique_Ts:
             if t == unique_Ts[0]:
                 K_big_inv = linalg.inv(K_big[:t * self.z_dim, :t * self.z_dim])
+                K_big_inv = (K_big_inv + K_big_inv.T) / 2  
                 logdet_k_big = self._logdet(K_big[:t * self.z_dim, :t * self.z_dim])
                 M = K_big_inv + C_rinv_c_big[:t * self.z_dim,:t * self.z_dim]
                 M_inv = linalg.inv(M)
+                M_inv = (M_inv + M_inv.T) / 2
                 logdet_M = self._logdet(M)
             else:
                 # Here, we compute the inverse of K for the current t from its
@@ -934,6 +938,7 @@ class GPFA(sklearn.base.BaseEstimator):
                         jac=True
                         )
             self.gp_kernel[i].theta = res_opt.x
+
             for j in range(len(precomp['Tu'])):
                 precomp['Tu'][j]['PautoSUM'][i, :, :].fill(0)
 
@@ -1108,18 +1113,22 @@ class GPFA(sklearn.base.BaseEstimator):
             [MAinv, MCinv.T],
             [MCinv, MDinv]
         ])
+        Minv = (Minv + Minv.T) / 2  # Ensure symmetry
         # Check if MD is positive definite
         try:
             logdet_MD = self._logdet(MD)  # Use Cholesky decomposition if possible
         except np.linalg.LinAlgError:
-            logdet_MD = fast_logdet(MD)  # Fallback to fast_logdet for non-PD matrices
+            logdet_MD = np.linalg.slogdet(MD)[1]  # Fallback to slogdet for non-PD matrices
+            warnings.warn("Cholesky decomposition failed for MD; using slogdet instead. "
+                          "MD may not be positive definite.", 
+                  UserWarning)
         logdet_M = -logdet_Ainv + logdet_MD
         if X is not None:
             if logdet_X is None:
                 logdet_X = self._logdet(X)
             MDpAinvBXAinvB = MD + AinvB.T @ X @ AinvB
             MAinv = X - X @ AinvB @ linalg.inv(MDpAinvBXAinvB) @ AinvB.T @ X
-            logdet_MAinv = logdet_MD + logdet_X - fast_logdet(MDpAinvBXAinvB)
+            logdet_MAinv = logdet_MD + logdet_X - np.linalg.slogdet(MDpAinvBXAinvB)[1]
             return Minv, logdet_M, MAinv, logdet_MAinv
         return Minv, logdet_M
 
@@ -1233,6 +1242,7 @@ class GPFA(sklearn.base.BaseEstimator):
             T = precomp['Tu'][j]['T']
             if j == 0:
                 Kinv = linalg.inv(Kmax[:T, :T])
+                Kinv = (Kinv + Kinv.T) / 2
                 logdet_K = self._logdet(Kmax[:T, :T])
             else:
                 # Here, we compute the inverse of K for the current

@@ -15,7 +15,7 @@ __all__ = [
 
 class EventTimesToCounts(sklearn.base.TransformerMixin):
     """
-    Bins sequence of event times into event counts whithin evenly spaced
+    Bins sequence of event times into event counts within evenly spaced
     time bins.
 
     This class supports binning sequences of event times (e.g., spike trains)
