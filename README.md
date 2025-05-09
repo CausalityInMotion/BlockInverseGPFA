@@ -1,4 +1,6 @@
-# GPFA_for_sklearn
+# BlockInvGPFA
+
+[![Automated Tests](https://github.com/CausalityInMotion/BlockInverseGPFA/actions/workflows/tests.yml/badge.svg)](https://github.com/CausalityInMotion/BlockInverseGPFA/actions/workflows/tests.yml)
 
 This package is an implementation of Gaussian Process Factor Analysis (GPFA) by Byron Yu et al.,
 (2009) in python. The code is based on [Elephant](https://elephant.readthedocs.io/en/latest/reference/gpfa.html)'s
