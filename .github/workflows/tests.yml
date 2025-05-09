@@ -2,7 +2,7 @@
 # Copyright 2021 Brooks M. Musangu and Jan Drugowitsch.
 # license Modified BSD, see LICENSE.txt for details.
 # ...
-name: Automated Tests
+name: CI Tests and Docs
 
 on:
   push:
@@ -11,23 +11,46 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  test:
+    name: Run Pytest Suite
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up Python 3.x
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: Install dependencies
+      - name: Install package and test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest
-          pip install -e .
+          pip install .[test]
 
       - name: Run tests
         run: |
           pytest test/
+
+  docs:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install docs dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .[docs]
+
+      - name: Build Sphinx documentation
+        run: |
+          sphinx-build -b html docs docs/_build
