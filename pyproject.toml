@@ -10,7 +10,7 @@ authors = [
     {name = "Brooks M. MUSANGU", email = "brooks_musangu@hms.harvard.edu"},
     {name = "Jan DRUGOWITSCH", email = "jan_drugowitsch@hms.harvard.edu"}
 ]
-license = {text = "BSD-3-Clause", file = "LICENSE.txt"}
+license = {file = "LICENSE.txt"}
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [

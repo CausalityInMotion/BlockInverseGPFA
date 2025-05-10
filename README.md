@@ -76,7 +76,7 @@ To run the full test suite in the [test](test) folder, use:
 $ pip install .[test]
 $ pytest test/
 ```
-Tests are automatically run via [GitHub Actions](https://github.com/CausalityInMotion/BlockInverseGPFA/actions/new) on every push and pull request.
+Tests are automatically run via [GitHub Actions](https://github.com/CausalityInMotion/BlockInverseGPFA/actions/workflows/tests.yml) on every push and pull request.
 
 ## License
 Modified BSD License based on Elephant, see [LICENSE.txt](LICENSE.txt) for details.
