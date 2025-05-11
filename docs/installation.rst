@@ -5,62 +5,75 @@ Installation Guide
 ====================
 
 Clone the Project Locally
---------------------------
-
-Begin by cloning the project's repository locally using the `git` command within a Python virtual environment. Ensure that you have `Python virtual environment`_ installed and activated before proceeding. Open a terminal and run the following commands:
-
-.. code-block:: bash
-
-    $ git clone https://github.com/CausalityInMotion/GPFA_for_sklearn
-    $ cd GPFA_for_sklearn
-
-Install Required Packages
 -------------------------
 
-Once you are in the project's working directory, install the required Python packages using `pip` and the `requirements.txt` file:
+Begin by cloning the project repository locally. It is strongly recommended to do this inside a `Python virtual environment`_:
 
 .. code-block:: bash
 
-    $ pip install -r requirements.txt
+    $ git clone https://github.com/CausalityInMotion/BlockInverseGPFA.git
+    $ cd BlockInverseGPFA
 
-Your environment is now properly configured to use the GPFA package.
+Install the Package
+-------------------
+
+Use `pip` to install the package and its core dependencies:
+
+.. code-block:: bash
+
+    $ pip install .
+
+If you also want to run tests or build documentation, you can install the appropriate optional dependencies:
+
+- For testing:
+
+  .. code-block:: bash
+
+      $ pip install .[test]
+
+- For documentation:
+
+  .. code-block:: bash
+
+      $ pip install .[docs]
 
 Building the Documentation
 --------------------------
 
-To build the documentation, you will need the following Python packages:
+To build the documentation, you will need the following packages:
 
-- `Sphinx`_: A documentation generator.
+- Sphinx_: A documentation generator.
 - `Read the Docs Sphinx Theme`_: A theme for Sphinx that provides an elegant and readable documentation format.
 
-You can install these packages using `pip`:
-
-.. code-block:: bash
-
-   $ pip install sphinx
-   $ pip install sphinx-rtd-theme
-
-After installing the required packages, navigate to the "docs" directory:
+After installing the documentation dependencies, generate the HTML documentation as follows:
 
 .. code-block:: bash
 
     $ cd docs
-
-To generate the documentation in HTML format, run the following command:
-
-.. code-block:: bash
-
     $ make html
 
-To view the generated documentation, open the HTML index page in your web browser:
+To view the generated documentation in your browser:
 
 .. code-block:: bash
 
-    $ open _build/html/index.html
+    $ open _build/html/index.html  # On macOS
+
+    # OR
+    $ xdg-open _build/html/index.html  # On Linux
+
+    # OR
+    $ start _build/html/index.html  # On Windows (in cmd)
 
 Your documentation is now available for reference.
 
-This guide provides step-by-step instructions for installing the GPFA package and generating its documentation.
+Alternatively, you can view the latest published documentation online:
+
+📖 https://blockinversegpfa.readthedocs.io/en/latest/
+
+About This Guide
+----------------
+
+This guide provides step-by-step instructions for installing the BlockInvGPFA package, running its test suite, and building its documentation using Python packaging standards.
 
 .. _Python virtual environment: https://docs.python.org/3/library/venv.html
 .. _Sphinx: http://www.sphinx-doc.org

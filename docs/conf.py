@@ -7,7 +7,7 @@ import sys
 import os
 from datetime import date
 
-# include root path to allow autodoc to find gpfa module
+# include root path to allow autodoc to find blockgpfa module
 sys.path.insert(0, os.path.abspath('../'))
 
 # Path to the source directory (where your .rst files are)
@@ -22,7 +22,7 @@ builddir = os.path.abspath(os.path.join(os.path.dirname(__file__), '_build'))
 
 # -- General configuration -----------------------------------------------
 
-project = 'GPFA Documentation'
+project = 'BlockInvGPFA Documentation'
 authors = 'Brooks M. Musangu and Jan Drugowitsch'
 copyright = "2021-{this_year}, {authors}".format(
     this_year=date.today().year, authors=authors)
