@@ -25,17 +25,18 @@ from sklearn.gaussian_process.kernels import (
 from tqdm import trange
 
 __all__ = [
-    "GPFA"
+    "BlockInvGPFA"
 ]
 
 
-class GPFA(sklearn.base.BaseEstimator):
-    """Gaussian Process Factor Analysis (GPFA) is a probabilistic
-    dimensionality reduction technique that extracts smooth latent
-    trajectories from noisy, high-dimensional time series data.
-    It combines Factor Analysis (FA) for dimensionality reduction with Gaussian
-    Processes (GPs) to model the time courses of the latent factors in a
-    unified, probabilistic framework.
+class BlockInvGPFA(sklearn.base.BaseEstimator):
+    """BlockInvGPFA is a high-performance implementation of Gaussian
+    Process Factor Analysis (GPFA) is a probabilistic dimensionality
+    reduction technique that extracts smooth latent trajectories from
+    noisy, high-dimensional time series data. GPFA combines Factor
+    Analysis (FA) for dimensionality reduction with Gaussian Processes
+    (GPs) to model the time courses of the latent factors in a unified,
+    probabilistic framework.
 
     GPFA operates on a set of time-series data, where each time series is
     given by an ``x_dim`` x ``bins`` matrix. ``x_dim`` needs to be the same
@@ -46,6 +47,16 @@ class GPFA(sklearn.base.BaseEstimator):
 
     Please consult the :ref:`main page <gpfa_prob_model>` for more details on
     the underlying probabilistic model.
+
+    This implementation, BlockInvGPFA, builds on the core model described
+    in [Yu et al., 2009] and is adapted from the Elephant's toolkit, with
+    substantial algorithmic enhancements:
+
+    1. It uses block-matrix identities and Schur complement updates to
+       efficiently share kernel inversion computations across 
+       variable-length trials.
+    2. It introduces a new variance-explained metric to evaluate BlockInvGPFA 
+       model fits
 
     Parameters
     ----------
@@ -194,7 +205,7 @@ class GPFA(sklearn.base.BaseEstimator):
     Examples
     --------
     >>> import numpy as np
-    >>> from gpfa import GPFA
+    >>> from blockinvgpfa import BlockInvGPFA
 
     >>> X = np.array([[
     ...     [3, 1, 0, 4, 1, 2, 1, 3, 4, 2, 2, 1, 2, 0, 0, 2, 2, 5, 1, 3],
@@ -202,15 +213,15 @@ class GPFA(sklearn.base.BaseEstimator):
     ...     [2, 2, 1, 1, 3, 2, 3, 2, 2, 0, 3, 4, 1, 2, 3, 1, 4, 1, 0, 1]
     ... ]])
     >>> 
-    >>> gpfa_model = GPFA(z_dim=1)
+    >>> blockinv_gpfa = BlockInvGPFA(z_dim=1)
 
     >>> # Fit the model
-    >>> gpfa_model.fit(X)
+    >>> blockinv_gpfa.fit(X)
     Initializing parameters using factor analysis...
-    Fitting GPFA model...
+    Fitting GP parameters by EM...
 
     >>> # Infere latent variable time-courses for the same data
-    >>> Zs, _ = gpfa_model.predict()
+    >>> Zs, _ = blockinv_gpfa.predict()
     >>> print(Zs)
     [array([[-1.18405633, -2.00878   , -0.01470251, -2.3143544 ,  0.03651376,
              -1.06948736,  2.05355342, -0.16920794, -2.26437342, -1.21934552,
@@ -218,21 +229,21 @@ class GPFA(sklearn.base.BaseEstimator):
               0.89241818,  0.03509708, -1.3936327 ,  0.84781358, -1.2281484 ]])]
 
     >>> # Display the loading matrix (C_) and observation mean (d_) parameters
-    >>> print(gpfa_model.C_)
+    >>> print(blockinv_gpfa.C_)
     [[-0.78376501]
     [ 1.77773876]
     [ 0.51134474]]
 
-    >>> print(gpfa_model.d_)
+    >>> print(blockinv_gpfa.d_)
     [1.95470037 2.08933859 1.89693338]
 
     >>> # Obtaining log-likelihood scores
-    >>> llhs = gpfa_model.score()
+    >>> llhs = blockinv_gpfa.score()
     >>> print(llhs)
     [-117.54588379661148, -107.17193271370158, ..., -100.13200154180569]
 
     >>> # Evaluate the total explained variance regression score
-    >>> print(gpfa_model.variance_explained())
+    >>> print(blockinv_gpfa.variance_explained())
     (0.6581475357501596, array([0.65814754]))
 
 
@@ -761,7 +772,7 @@ class GPFA(sklearn.base.BaseEstimator):
 
         if np.any(np.diag(self.R_) == var_floor):
             warnings.warn('Private variance floor used for one or more '
-                          'observed dimensions in GPFA.')
+                          'observed dimensions in BlockInvGPFA.')
 
         self.fit_info_ = {'iteration_time': iter_time, 'log_likelihoods': lls}
 
@@ -1188,7 +1199,7 @@ class GPFA(sklearn.base.BaseEstimator):
             on the caller (which should be :func:`_learn_gp_params()`) to make
             sure this is called correctly.
 
-        Finally, see the notes in the GPFA README.
+        Finally, see the notes in the BlockInvGPFA README.
         """
         ############################################################
         # Fill out PautoSum

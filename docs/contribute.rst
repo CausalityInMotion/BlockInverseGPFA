@@ -4,7 +4,7 @@
 Contribution
 ==============
 
-We welcome contributions to the GPFA package, whether they involve enhancements, bug fixes,
+We welcome contributions to the BlockInvGPFA package, whether they involve enhancements, bug fixes,
 or documentation improvements. To ensure the codebase's quality and maintainability, please
 follow this guide carefully.
 
@@ -33,9 +33,9 @@ include tests for any module, class, or function you contribute.
 
 **Version Control Workflow**
 
-When contributing to the GPFA package, please follow these steps:
+When contributing to the BlockInvGPFA package, please follow these steps:
 
-1. Fork the GPFA repository on GitHub.
+1. Fork the BlockInvGPFA repository on GitHub.
 
 2. Clone your forked repository to your local machine.
 
@@ -50,12 +50,12 @@ When contributing to the GPFA package, please follow these steps:
 
 7. Push your branch to your GitHub fork.
 
-8. Create a pull request (PR) from your branch to the GPFA main repository. Provide a
+8. Create a pull request (PR) from your branch to the BlockInvGPFA main repository. Provide a
    detailed description of your changes in the PR.
 
 9. We will review your PR, and if necessary, provide feedback or request changes.
 
-10. Once your PR is approved, it will be merged into the main GPFA repository.
+10. Once your PR is approved, it will be merged into the main BlockInvGPFA repository.
 
-Thank you for your contribution to the GPFA package. Your efforts help improve
+Thank you for your contribution to the BlockInvGPFA package. Your efforts help improve
 and maintain this valuable resource for the community.

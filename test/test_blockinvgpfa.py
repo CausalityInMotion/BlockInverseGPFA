@@ -3,19 +3,19 @@
 # license Modified BSD, see LICENSE.txt for details.
 # ...
 """
-GPFA Unittests
+BlockInvGPFA Unittests
 """
 
 import unittest
 import numpy as np
 from scipy import linalg
-from gpfa import GPFA
+from blockinvgpfa import BlockInvGPFA
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel
 
 
 class TestGPFA(unittest.TestCase):
     """
-    Unit tests for the GPFA analysis.
+    Unit tests for the BlockInvGPFA analysis.
     """
     def setUp(self):
         """
@@ -113,7 +113,7 @@ class TestGPFA(unittest.TestCase):
         self.t_half = int(np.ceil(self.T[0] / 2.0))
 
         # ==================================================
-        # initialize GPFA
+        # initialize BlockInvGPFA
         # ==================================================
         multi_params_kernel = ConstantKernel(
                         1-0.001, constant_value_bounds='fixed'
@@ -136,29 +136,29 @@ class TestGPFA(unittest.TestCase):
                             ) * WhiteKernel(
                                 noise_level=1, noise_level_bounds='fixed'
                                     )]
-        self.gpfa = GPFA(
+        self.blockinv_gpfa = BlockInvGPFA(
             bin_size=self.bin_size, z_dim=self.z_dim,
             em_max_iters=self.n_iters
             )
-        self.gpfa_with_seq_kernel = GPFA(
+        self.gpfa_with_seq_kernel = BlockInvGPFA(
             bin_size=self.bin_size, z_dim=self.z_dim,
             gp_kernel=seq_kernel,
             em_max_iters=self.n_iters
             )
-        self.gpfa_with_multi_params_kernel = GPFA(
+        self.gpfa_with_multi_params_kernel = BlockInvGPFA(
             bin_size=self.bin_size, z_dim=self.z_dim,
             gp_kernel=multi_params_kernel,
             em_max_iters=self.n_iters
             )
         # fit the model
-        self.gpfa.fit(self.X)
+        self.blockinv_gpfa.fit(self.X)
         self.gpfa_with_multi_params_kernel.fit(self.X)
         self.gpfa_with_seq_kernel.fit(self.X)
-        self.results, _ = self.gpfa.predict(
+        self.results, _ = self.blockinv_gpfa.predict(
                                 returned_data=['Z_mu', 'Z_mu_orth'])
 
         # get latents sequence and data log_likelihood
-        self.latent_seqs, self.ll = self.gpfa._infer_latents(self.X)
+        self.latent_seqs, self.ll = self.blockinv_gpfa._infer_latents(self.X)
         self.latent_seqs_multiparamskern, self.ll_multiparams_kernel = \
             self.gpfa_with_multi_params_kernel._infer_latents(self.X)
         self.latent_seqs_seqkernel, self.ll_seq_kernel = \
@@ -173,7 +173,7 @@ class TestGPFA(unittest.TestCase):
         and covaraince is (K_inv + C'R_invC)
 
         Paramters:
-        gpfa_inst : GPFA instance
+        gpfa_inst : BlockInvGPFA instance
             Each istance is different based on the input params
         Returns:
         test_latent_seqs: numpy.ndarray
@@ -220,10 +220,10 @@ class TestGPFA(unittest.TestCase):
 
     def test_infer_latents(self):
         """
-        Test the mean and cov for different GPFA instances
+        Test the mean and cov for different BlockInvGPFA instances
         """
-        # get test mean and cov for different GPFA instances
-        test_latent_seqs_gpfa = self.create_mu_and_cov(self.gpfa)
+        # get test mean and cov for different BlockInvGPFA instances
+        test_latent_seqs_gpfa = self.create_mu_and_cov(self.blockinv_gpfa)
         test_latent_seqs_seq_kern = self.create_mu_and_cov(
             self.gpfa_with_seq_kernel
         )
@@ -262,28 +262,29 @@ class TestGPFA(unittest.TestCase):
 
     def test_orthonormalized_transform(self):
         """
-        Test GPFA orthonormalization transform of the parameter `C`.
+        Test BlockInvGPFA orthonormalization transform of the parameter `C`.
         """
-        corth = self.gpfa.Corth_
-        c_orth = linalg.orth(self.gpfa.C_)
+        corth = self.blockinv_gpfa.Corth_
+        c_orth = linalg.orth(self.blockinv_gpfa.C_)
         # Assert
         self.assertTrue(np.allclose(c_orth, corth))
 
     def test_orthonormalized_latents(self):
         """
-        Test GPFA orthonormalization functions applied in `gpfa.predict`.
+        Test BlockInvGPFA orthonormalization functions applied in
+        `blockinv_gpfa.predict`.
         """
         Z_mu = self.results['Z_mu'][0]
         Z_mu_orth = self.results['Z_mu_orth'][0]
-        test_Z_mu_orth = np.dot(self.gpfa.OrthTrans_, Z_mu)
+        test_Z_mu_orth = np.dot(self.blockinv_gpfa.OrthTrans_, Z_mu)
         # Assert
         self.assertTrue(np.allclose(Z_mu_orth, test_Z_mu_orth))
 
     def test_variance_explained(self):
         """
-        Test GPFA explained_variance
+        Test BlockInvGPFA explained_variance
         """
         test_r2_score = 0.6648115733320232
-        r2_t1 = self.gpfa.variance_explained()[0]
+        r2_t1 = self.blockinv_gpfa.variance_explained()[0]
         # Assert
         self.assertAlmostEqual(test_r2_score, r2_t1)

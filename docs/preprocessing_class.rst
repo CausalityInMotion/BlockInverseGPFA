@@ -2,7 +2,6 @@
 Preprocessing
 =============
 
-.. currentmodule:: gpfa
+.. currentmodule:: blockinvgpfa
 .. autoclass:: EventTimesToCounts
    :members:
-

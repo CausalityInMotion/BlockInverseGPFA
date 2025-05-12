@@ -8,7 +8,7 @@ Preprocessing Unittests
 
 import unittest
 import numpy as np
-from gpfa.preprocessing import EventTimesToCounts
+from blockinvgpfa.preprocessing import EventTimesToCounts
 try:
     import neo
     neo_imported = True
